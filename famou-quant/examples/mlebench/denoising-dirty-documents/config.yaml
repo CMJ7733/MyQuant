@@ -1,0 +1,248 @@
+# Circle Packing Experiment Configuration
+# Target: Maximize sum of radii for n=26 circles in unit square
+# AlphaEvolve benchmark result: 2.635
+
+# =============================================================================
+# Experiment Configuration - WHAT to optimize
+# =============================================================================
+experiment:
+  name: mlebench-denoising-dirty-documents
+  task_description: |
+    You are an experienced machine learning algorithm engineer with expertise in end-to-end system optimization, feature engineering, robust neural network design, and efficient model development using PyTorch.
+    Your current task is to design a machine learning/deep learning algorithm based on the requirements above. You have full freedom to redesign, enhance, or replace any of the following components:
+     - Data loading and preprocessing (including augmentation, normalization, etc.)
+     - Feature engineering or preprocessing (including selection, transformation, and normalization)
+     - Choose suitable state-of-the-art models tailored to the task characteristics.
+     - Integration of ML/DL algorithms (XGBoost, Random Forest, etc.)
+     - Neural network architecture (custom layers, activation functions, attention mechanisms, normalization, regularization, etc.)
+     - Training objectives (custom loss functions, auxiliary tasks, or multi-task learning)
+     - Regularization strategies (dropout, weight decay, label smoothing, etc.)
+     - Hyperparameter optimization (learning rate, schedulers, batch size, model depth/width, etc.)
+     - Cross-validation for hyperparameter tuning (searching for optimal hyperparameters on the training set via cross-validation, then training the final model on the validation set)
+     - Efficient training/inference pipelines (batching, data loading, distributed training, etc.)
+     - Numerical stability and reproducibility (any known techniques to improve performance or efficiency in this domain)
+     - ML tricks, Kaggle techniques, feature selection, feature engineering, model ensembling, etc.
+     - You should prioritize using pre-trained models that are at the forefront of the field, as this usually leads to better results.
+    You may combine multiple steps, design new functional pipelines, restructure model architectures, or adopt any standard or innovative ML methods (as long as implemented in Python).
+
+    # Core Task Info
+    {
+      "Task Type": "Regression",
+      "Data Type": "Image (Computer Vision)",
+      "Brief Description": "This competition challenges participants to perform image denoising on scanned documents. Given a dataset of images with synthetic noise (simulating real-world artifacts like coffee stains, wrinkles, etc.), the goal is to create a model that removes the noise and restores the clean version of the text, thereby improving the potential for Optical Character Recognition (OCR).",
+      "Dataset Description": "The dataset consists of three main folders of PNG images and a sample submission file. The `train/` folder contains 115 images of text with synthetic noise. The `train_cleaned/` folder contains the corresponding 115 clean, ground-truth versions of the training images. The `test/` folder contains 29 noisy images for which participants must generate cleaned versions. The task is to train a model on the paired noisy and clean images from the training set to predict the cleaned versions of the images in the test set. A `sampleSubmission.csv` file is also provided as a template for submissions.",
+      "Submission Specifications": "Submissions must be in a CSV file format with two columns: `id` and `value`. The file must include a header. Each row corresponds to a single pixel in a test image. The `id` column should be a string formatted as `image_row_col` (e.g., '110_1_1' represents the pixel at row 1, column 1 of image '110'). The `value` column should be the predicted grayscale intensity for that pixel, a floating-point number ranging from 0 (black) to 1 (white).",
+      "Submission channel number to each sample": 1,
+      "Metric Evaluation Description": "Submissions are evaluated using the Root Mean Squared Error (RMSE). The RMSE is calculated between the predicted pixel intensity values in the submission file and the actual grayscale pixel intensity values of the ground-truth clean images. The error is computed for each pixel, squared, averaged over all pixels in all test images, and then the square root of this average is taken. A lower RMSE score indicates a better performance.",
+      "Metric Name": "Root Mean Squared Error",
+      "Metric Direction": false,
+      "Longer time limit required": "True"
+    }
+
+    # Data path:
+    /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/denoising-dirty-documents/prepared/public
+
+    ## File tree:
+    ```
+    ./
+    ├── test/
+    │   ├── 110.png (149.2 kB)
+    │   ├── 111.png (146.9 kB)
+    │   ├── ... (+27 more files)
+    ├── train/
+    │   ├── 101.png (152.7 kB)
+    │   ├── 102.png (153.7 kB)
+    │   ├── ... (+113 more files)
+    ├── train_cleaned/
+    │   ├── 101.png (57.3 kB)
+    │   ├── 102.png (54.7 kB)
+    │   ├── ... (+113 more files)
+    ├── sampleSubmission.csv (75.8 MB)
+    ├── description.md (3.4 kB)```
+
+    #### Directory-specific image statistics (sampled data):
+
+    ##### test (sampled 29 images):
+      - Width: min=540, max=540, mean=540.00
+      - Height: min=258, max=420, mean=369.72
+      - Aspect ratio (mean): 1.536
+
+    ##### train (sampled 115 images):
+      - Width: min=540, max=540, mean=540.00
+      - Height: min=258, max=420, mean=365.06
+      - Aspect ratio (mean): 1.559
+
+    ##### train_cleaned (sampled 115 images):
+      - Width: min=540, max=540, mean=540.00
+      - Height: min=258, max=420, mean=365.06
+      - Aspect ratio (mean): 1.559
+
+
+    ## File details:
+
+    ### sampleSubmission.csv: 
+    #### 1.DataFrame preview:
+    It has 5789880 rows and 2 columns.
+    Here is some information about the columns:
+    id (object) has 5789880 unique values. Some example values: ['95_420_540', '110_1_1', '110_1_2', '110_1_3']
+    value (int64) has 1 unique values: [1]
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+            id  value
+    0  110_1_1      1
+    1  110_1_2      1
+    2  110_1_3      1
+
+    # Other Requirements
+     - Code Generation Requirements:
+        - Library Imports: All libraries must be imported at the beginning of the file. Implicit imports are prohibited.
+        - Feature Processing: Handle missing values and features conservatively. For uncertain feature types, first determine the type before selecting imputation and processing strategies.
+        - Computing resource: Provides sufficient CPU computing power and 1 A800 graphics cards, you can use them freely if necessary.
+        - CPU resources are relatively sufficient, so it is appropriate to run more workers during data processing and loading.
+        - Maximize GPU utilization and estimate a suitable batch size based on the number of model parameters.
+        - Try to use the latest models, which often bring better results. For example, efficient_net is often better than restnet, and the larger size of efficient_net, such as large, is also better than base.
+        - If you train a deep learning model, do not train for more than 10 epochs at the beginning. You can adjust it according to the results of the code execution. If it is underfitting, you can increase the epochs.
+        - For a deep learning task, predictions need to be made after each epoch of training and the corresponding submission_epoch.csv file needs to be generated. The storage path should remain consistent. For example, for a task that trains for 3 epochs, the first round of training predictions is saved as `submission_1.csv`, the second round of training predictions is saved as `submission_2.csv`, and so on...
+        - You need to save the trained model to the specified save address above. The model should be saved in the format of the `transformers` library. Furthermore, ensure that each epoch's model is saved in a folder following the naming convention `{model_name}_{epoch}`.
+        - If you intend to use certain models, you should use the name from Hugging Face rather than a local directory.
+        - Prioritize the `transformers` library over `timm` for all model loading operations.
+        - When a pre-trained model download from a remote repository like Hugging Face fails, attempt to use a different model rather than retrying the same one.
+        - **Do not use exception handling mechanisms in any data loading steps; expose potential issues instead, and never fabricate submission files.**
+        
+     - Code Style:
+        - Clear variable naming
+        - Optional type annotations
+        - Brief comments for key steps
+        - Print information about key steps instead of using tqdm to print the training process
+        - Directly generate a complete, end-to-end CSV output
+        - Provide executable code that runs without errors and produces the **submission.csv** file as required
+        Suppress all warnings to avoid displaying warning messages
+    
+    ## Ultimate Goal
+     - Maximize your score in this task/competition and rank higher on the leaderboard. Apply a combination of techniques (machine learning knowledge and Kaggle competition tricks) to achieve this.
+
+    ## File Paths
+     - Save path (submission file): /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/denoising-dirty-documents/submission.csv
+     - Model Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/denoising-dirty-documents/model_save
+     - Read path: /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/denoising-dirty-documents/prepared/public/
+
+    
+  language: python
+  strategy: example_strategy  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 2
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  # Experience system
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+    l1_trigger: interval
+    l1_interval: 6
+    # l0_path: ./famou_data/circle_packing_evolution_20260318_172949_926d/
+
+  # Knowledge system (MethodCard)
+  knowledge:
+    enabled: false
+    source_dir: knowledge
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 100
+    migration_interval: 5
+    migration_size: 1
+    migration_topology: ring
+    reset_interval: 15
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    api_base: http://211.23.3.237:27544/v1
+    model: gemini-3-pro-preview
+    api_key: YOUR_API_KEY  # Replace with your API key or use environment variable
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 3600
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 14400
+    # GPU Usage (Optional)
+    gpu_ids: [0, 1, 2, 3]      # Available GPU IDs (empty list = no GPU)
+    gpu_num_each_run: 1.0      # Number of GPUs per evaluation task
+    input_params:
+      competition_name: denoising-dirty-documents
+  
+  # Monitoring Configuration (Optional)
+  monitor:
+    enabled: false  # Set to false to disable monitoring
+    type: wandb  # Monitoring backend type (currently only 'wandb' is supported)
+
+    # WandB-specific settings
+    wandb:
+      project: famou-mlebench  # WandB project name
+      entity: null  # WandB entity (username or team), null for default
+      run_name: null  # Run name, null for auto-generation
+      group: null  # Group name for grouping related runs
+      tags:
+        - mlebench
+        - creative_exploration
+      notes: "Circle packing optimization with creative exploration strategy"
+
+      # Async logging settings
+      async_mode: true  # Enable asynchronous (non-blocking) logging
+      num_workers: 4  # Number of async worker threads
+      queue_size: 100  # Max queue size for async logging
+
+      # What to monitor
+      track_metrics:
+        islands: true  # Track metrics for each island
+        performance: true  # Track performance metrics (best, avg, median scores)
+        population: true  # Track population metrics (size, generations)
+        diversity: true  # Track diversity metrics (genetic, code diversity)
+        cost: true  # Track LLM API costs
+      track_artifacts: true  # Track artifacts (best programs, visualizations)
+      track_lineage_tree: true  # Track lineage tree visualization
+      checkpoint_interval: 1  # Record metrics every N iterations
+
+  # langfuse configuration (optional)
+  # langfuse:
+  #   enabled: false  # Set to false to disable Langfuse integration
+  #   public_key: your_public_key
+  #   secret_key: your_secret_key
+  #   base_url: https://us.cloud.langfuse.com
+
+
+
+# =============================================================================
+# Module Parameters (optional) - ALGORITHM parameters
+# =============================================================================
+modules:
+  generate:
+    # Production canary for new generation protocol:
+    # - hybrid: XML-first + fenced/json fallback (recommended)
+    # - xml: strict XML-first
+    # - legacy_json: one-click rollback
+    output_protocol: hybrid

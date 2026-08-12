@@ -1,0 +1,99 @@
+You are improving a {{ language }} solution for the following task.
+
+<task>
+{{ task_description }}
+</task>
+
+<current_plan>
+{{ plan_context.plan_text }}
+</current_plan>
+
+{% if plan_context.get('component_name') %}
+<component_focus>
+  <component_name>{{ plan_context.get('component_name') }}</component_name>
+  <component_goal>{{ plan_context.get('component_goal') }}</component_goal>
+  <component_constraints>{{ plan_context.get('component_constraints') }}</component_constraints>
+  <component_suggested_techniques>{{ plan_context.get('component_suggested_techniques') }}</component_suggested_techniques>
+  <prior_component_experience>{{ plan_context.get('component_experience') }}</prior_component_experience>
+</component_focus>
+{% endif %}
+
+{% if plan_context.get('strategy_guardrails') %}
+<strategy_guardrails>
+{{ plan_context.get('strategy_guardrails') }}
+</strategy_guardrails>
+{% endif %}
+
+<initial_anchor_parent_program>
+{{ initial_anchor_parent_program_json }}
+</initial_anchor_parent_program>
+
+{% if current_best_program_json %}
+<current_best_program>
+{{ current_best_program_json }}
+</current_best_program>
+{% endif %}
+
+<plan_evolution_history>
+{{ evolution_history_json }}
+</plan_evolution_history>
+
+Instructions:
+1. Treat the current plan as the default binding execution specification for this rollout, not as a loose suggestion.
+2. Treat `<initial_anchor_parent_program>` as the root anchor parent where this plan chain started.
+3. Treat `<plan_evolution_history>` as the descendant chain that came after that anchor parent.
+{% if current_best_program_json %}
+4. Treat `<current_best_program>` as the strongest current implementation in that chain.
+5. Use the full chain context to avoid repeating weak attempts and to preserve validated progress.
+6. Implement the concrete requirements in the current plan faithfully. Do not silently drop, weaken, or replace a concrete plan step just because another approach also seems reasonable.
+7. Preserve strong working components from the current best program only when they do not conflict with the current plan. If the plan requires changing a component, follow the plan.
+8. You may deviate from the current plan only when a plan step has an obvious flaw, contradiction, missing prerequisite, interface breakage risk, or would make the program materially less runnable.
+9. If you deviate from any concrete plan step, you must make that deviation explicit inside `<implementation_plan>` and give a short reason. Do not make hidden deviations.
+{% if diff_write_mode and has_evolve_block %}
+10. First write a concrete implementation plan, then produce the complete EVOLVE-BLOCK section (only the code between `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END`), not a full program.
+{% else %}
+10. First write a concrete implementation plan, then produce a complete runnable solution.
+{% endif %}
+11. The implementation plan must map clearly to the strategy-level plan above and should state which plan requirements are being implemented in this rollout.
+12. Do not output any prose outside the required XML wrapper and the single final code block.
+13. If `<strategy_guardrails>` is present, treat it as binding engineering constraints.
+{% if diff_write_mode and has_evolve_block %}
+14. All your changes MUST stay inside the EVOLVE-BLOCK. Any additional imports or helpers your implementation needs must also go inside the EVOLVE-BLOCK — do not repeat imports already present in the fixed prefix before the block.
+{% endif %}
+{% else %}
+4. Use the full chain context to avoid repeating weak attempts and to preserve validated progress.
+5. Implement the concrete requirements in the current plan faithfully. Do not silently drop, weaken, or replace a concrete plan step just because another approach also seems reasonable.
+6. You may deviate from the current plan only when a plan step has an obvious flaw, contradiction, missing prerequisite, interface breakage risk, or would make the program materially less runnable.
+7. If you deviate from any concrete plan step, you must make that deviation explicit inside `<implementation_plan>` and give a short reason. Do not make hidden deviations.
+{% if diff_write_mode and has_evolve_block %}
+8. First write a concrete implementation plan, then produce the complete EVOLVE-BLOCK section (only the code between `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END`), not a full program.
+{% else %}
+8. First write a concrete implementation plan, then produce a complete runnable solution.
+{% endif %}
+9. The implementation plan must map clearly to the strategy-level plan above and should state which plan requirements are being implemented in this rollout.
+10. Do not output any prose outside the required XML wrapper and the single final code block.
+11. If `<strategy_guardrails>` is present, treat it as binding engineering constraints.
+{% if diff_write_mode and has_evolve_block %}
+12. All your changes MUST stay inside the EVOLVE-BLOCK. Any additional imports or helpers your implementation needs must also go inside the EVOLVE-BLOCK — do not repeat imports already present in the fixed prefix before the block.
+{% endif %}
+{% endif %}
+
+Required output format:
+<response>
+  <implementation_plan>Step 1: ...
+Step 2: ...
+Step 3: ...</implementation_plan>
+{% if diff_write_mode and has_evolve_block %}
+  ```{{ language }}
+  # EVOLVE-BLOCK-START
+  ...
+  # EVOLVE-BLOCK-END
+  ```
+  The code before `# EVOLVE-BLOCK-START` (the fixed prefix) is always present at runtime and executed first — its imports and definitions are directly available inside the EVOLVE-BLOCK without re-importing. Only add imports for packages not already present in the prefix.
+  ```
+{% else %}
+  ```{{ language }}
+  ...
+  ```
+{% endif %}
+</response>

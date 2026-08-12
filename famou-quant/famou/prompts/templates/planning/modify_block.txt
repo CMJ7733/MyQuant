@@ -1,0 +1,71 @@
+You are an expert programmer. Your task is to MODIFY the specified BLOCK in the code.
+
+TASK: {{ task_description }}
+
+OPERATION: modify
+TARGET BLOCK: {{ target_block }}
+
+INSTRUCTIONS:
+{% if target_block == "EVOLVE" %}
+- Refactor, optimize, or improve the code inside the EVOLVE-BLOCK
+{% else %}
+- Refactor, optimize, or improve the code in BLOCK {{ target_block }}
+{% endif %}
+- You may change implementation details, algorithms, or code structure
+
+# Rules
+- Keep the same functionality but make it better
+- If your modified code needs new imports, constants, helper functions, or helper classes,
+  you **must** place them inside the returned target block.
+{% if target_block == "EVOLVE" %}
+- Do NOT change code outside the EVOLVE-BLOCK
+{% else %}
+- Do NOT change other blocks
+{% endif %}
+
+PARENT CODE:
+```
+{{ parent_code }}
+```
+
+{% if inspirations %}
+REFERENCE CODE:
+{{ inspirations }}
+{% endif %}
+
+OUTPUT FORMAT:
+Return exactly the required sections below, in order, with no extra text or explanation.
+
+1. The modified block, using the correct marker pair exactly as shown. Do not wrap this block in a markdown code fence.
+
+{% if target_block == "EVOLVE" %}
+{{ comment }} EVOLVE-BLOCK-START
+import xxx
+<your modified code here>
+{{ comment }} EVOLVE-BLOCK-END
+{% else %}
+{{ comment }} BLOCK {{ target_block }} START
+import xxx
+<your modified code here>
+{{ comment }} BLOCK {{ target_block }} END
+{% endif %}
+
+{% if language == "python" %}
+2. A fenced required_packages block for third-party PyPI packages required by the final full Python program after this modification:
+
+```required_packages
+
+```
+
+Rules for the required_packages block:
+- List package distribution names only, one per line.
+- Do not write Python import statements. For example, write "pandas", not "import pandas as pd".
+- Include packages required by both the unchanged parent code and your modified block.
+- Exclude Python standard-library modules and project-local modules.
+- Do not include comments, aliases, version specifiers, prose, code, or placeholder text.
+- Leave the fenced block empty if no third-party packages are required.
+- Correct examples: pandas, scikit-learn, pillow, matplotlib.
+- Incorrect examples: import pandas as pd; from typing import List; os; json.
+{% endif %}
+
+Do NOT include any other text or explanation.

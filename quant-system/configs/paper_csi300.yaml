@@ -1,0 +1,95 @@
+# Paper-specification run: CSI300, 10-day horizon (§4.1, §B.1, §B.4, §B.8).
+#
+#     cogalpha search --config configs/paper_csi300.yaml --llm-config configs/llm.yaml
+#
+# Cost, extrapolated from measured throughput on this machine: ~30k sandbox
+# evaluations (~15 CPU-hours, ~1 h at 16 workers) and on the order of 100k LLM
+# calls / 230M tokens. On a metered endpoint set evolution.max_llm_calls, or start
+# from configs/quick.yaml.
+
+data:
+  provider: qlib
+  market: csi300
+  horizon: 10
+  # Chronological splits exactly as §B.1 states them.
+  train: ["2011-01-01", "2019-12-31"]
+  valid: ["2020-01-01", "2020-12-31"]
+  test:  ["2021-01-01", "2024-12-01"]
+
+  # Fitness is measured on train, not valid. Measured on this data: the 243-day
+  # valid window lets a raw-price control (a pure size proxy) score RankIC 0.0825,
+  # above every genuine alpha tested -- selection there promotes noise. valid is
+  # kept as a real holdout for `cogalpha compose`; test is touched once, for the
+  # final report.
+  fit_split: train
+
+  qlib_provider_uri: "~/.qlib/qlib_data/cn_data_2026"
+
+llm:
+  # Credentials come from --llm-config configs/llm.yaml (git-ignored).
+  # The paper serves gpt-oss-120b locally; §4.2 found reasoning-tuned models did
+  # *worse* here, so a stronger model is not automatically a better choice.
+  provider: openai
+  model: "deepseek-v4-flash"
+  task_temperatures: [0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+  checker_temperature: 0.8
+  max_tokens: 4096
+
+evolution:
+  # §B.8: 13 of the 21 agents per run, selected by golden ratio.
+  agents_per_run: 13
+  golden_ratio_selection: true
+  alphas_per_agent: 6
+
+  # §B.4: initial pool 80, parent pool 32, children 3x parent = 96.
+  initial_pool_size: 80
+  parent_pool_size: 32
+  children_multiplier: 3
+
+  # §B.4: 24 generations per agent in 3 inner sub-cycles of 8.
+  generations: 24
+  sub_cycles: 3
+  inject_every: 2
+  elitism_carry: 2
+
+  # §B.4 plateau rule: stop when the elite mean improves by <= 0.001 across two
+  # consecutive windows.
+  plateau_window: 3
+  plateau_delta: 0.001
+
+  op_weights:
+    mutation: 1.0
+    crossover: 1.0
+    crossover_then_mutation: 1.0
+
+  dedup: true
+  seed: 42
+  max_llm_calls: null
+
+fitness:
+  # §4.7 finds (65, 80) best: a looser gate keeps the parent pool large and delays
+  # premature convergence.
+  qualified_percentile: 65.0
+  elite_percentile: 80.0
+  # §A.4 floors, verbatim.
+  qualified_min_bounds: {ic: 0.005, rank_ic: 0.005, icir: 0.05, rank_icir: 0.05, mi: 0.02}
+  elite_min_bounds:     {ic: 0.01,  rank_ic: 0.01,  icir: 0.1,  rank_icir: 0.1,  mi: 0.02}
+  mi_bins: 10
+  mi_scale: corr_equivalent
+  min_names_per_day: 10
+  # AER/IR are reported for finished candidates, not used for tiering.
+  compute_backtest: false
+
+quality:
+  max_repair_rounds: 2
+  max_improve_rounds: 1
+  nan_ratio_limit: 0.30      # §B.4
+  min_distinct_per_day: 5    # §A.3
+  exec_timeout_s: 60.0
+  memory_limit_mb: 8192
+  leakage_shift_probe: true
+  leakage_tail_days: 40
+
+run:
+  out_dir: runs
+  top_candidates: 20   # Table 1 composes 20 alphas

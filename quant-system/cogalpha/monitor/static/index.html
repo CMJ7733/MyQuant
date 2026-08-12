@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<!--
+  CogAlpha monitor — single file, no build step, no CDN.
+
+  Everything is hand-rolled: SVG for the charts, CSS grid for the layout, one SSE
+  connection for the data. No npm, no bundler, no external requests. This machine
+  cannot reach github, and a dashboard that needs a network to render is useless for
+  watching a run on a remote box through an SSH tunnel.
+
+  Data flow: /api/stream pushes a full snapshot once a second; render() is a pure
+  function of that snapshot. Detail panels fetch on click, because prompts are large
+  and nobody is reading 100k of them.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CogAlpha monitor</title>
+<style>
+  /*
+    Palette: a trading terminal, not a GitHub page.
+
+    Two decisions drive the whole thing, and both come from what these screens are
+    for -- being read at a glance, by someone who is not looking directly at them.
+
+    1. RED IS UP, GREEN IS DOWN. Chinese convention (红涨绿跌), which is what a
+       Wind / 通达信 / 同花顺 user's eye is trained on. Inverting it on a dashboard
+       someone glances at is worse than any aesthetic problem. Note this is the
+       opposite of the Western convention -- if this is ever read by a US desk, swap
+       --up and --down and nothing else needs to change.
+
+    2. HUE CARRIES ONE MEANING ONLY. The previous version used green for both "agent
+       finished" and "metric positive", and blue for both "survivors" and "done",
+       so a colour told you nothing without reading the label. Now:
+           red    = up / positive / gain
+           green  = down / negative / loss
+           amber  = attention, rejection, warning
+           cyan   = the machine talking about itself (counts, progress, throughput)
+           gold   = elite, the thing you are hunting
+       Nothing else is coloured. Everything structural is grey.
+
+    Backgrounds are near-black (#080a0e) rather than #0d1117: these panels are read
+    for hours, and the extra contrast against the value text is what makes a number
+    legible from across a room.
+  */
+  :root {
+    /* --- structure: five greys, deliberately far apart ------------------- */
+    --bg:#080a0e;          /* page */
+    --panel:#0f1319;       /* card */
+    --panel2:#161b23;      /* inset: table stripes, cells, bar troughs */
+    --panel3:#1d242e;      /* hover */
+    --line:#242c38;        /* hairline */
+    --line2:#36414f;       /* emphasised divider */
+
+    /* --- text: three steps, no more --------------------------------------- */
+    --fg:#e8edf4;          /* values */
+    --dim:#93a1b5;         /* labels */
+    --dimmer:#5d6a7d;      /* units, hints */
+
+    /* --- semantics: one hue, one meaning --------------------------------- */
+    --up:#ff4d4f;          /* 涨 positive metric, gain */
+    --up-bg:rgba(255,77,79,.13);
+    --down:#12c46a;        /* 跌 negative metric, loss */
+    --down-bg:rgba(18,196,106,.13);
+    --warn:#ffa726;        /* rejection, attention, budget */
+    --warn-bg:rgba(255,167,38,.12);
+    --info:#2fb8e8;        /* counts, progress, throughput -- never a P&L colour */
+    --info-bg:rgba(47,184,232,.12);
+    --elite:#ffcf40;       /* elite tier: the target */
+    --elite-bg:rgba(255,207,64,.13);
+    --qual:#2fb8e8;        /* qualified tier */
+
+    --mono: ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a { color:var(--info); }
+  code, .mono { font-family:var(--mono); }
+  /* Tabular figures everywhere numbers change in place: without this, digits of
+     different widths make a live counter jitter and the eye chases it. */
+  .num, .stat .v, td.num, th.num { font-variant-numeric:tabular-nums; }
+
+  /* ------------------------------------------------------------------ header */
+  header {
+    position:sticky; top:0; z-index:20; background:var(--panel);
+    border-bottom:1px solid var(--line2); padding:9px 14px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  .brand {
+    font-weight:700; letter-spacing:1.2px; font-size:12px;
+    text-transform:uppercase; color:var(--fg);
+    border-left:3px solid var(--info); padding-left:9px;
+  }
+  .pill {
+    font-size:10px; font-weight:600; letter-spacing:.6px; text-transform:uppercase;
+    padding:3px 8px; border-radius:2px; border:1px solid var(--line2);
+    color:var(--dim); font-family:var(--mono);
+  }
+  /* A live run is the one state worth an urgent colour. */
+  .pill.live { color:#fff; background:var(--up); border-color:var(--up); }
+  .pill.done { color:var(--info); border-color:var(--info); background:var(--info-bg); }
+  .pill.stale { color:var(--warn); border-color:var(--warn); background:var(--warn-bg); }
+  .dot {
+    display:inline-block; width:6px; height:6px; border-radius:50%;
+    background:#fff; margin-right:5px; vertical-align:middle;
+  }
+  .live .dot { animation:pulse 1.1s steps(2,end) infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+  .stats { display:flex; gap:1px; margin-left:auto; flex-wrap:wrap; }
+  .stat {
+    text-align:right; background:var(--panel2); padding:4px 10px;
+    border-top:2px solid var(--line2); min-width:76px;
+  }
+  .stat .k {
+    font-size:9px; color:var(--dimmer); text-transform:uppercase;
+    letter-spacing:.7px; font-weight:600;
+  }
+  .stat .v { font-family:var(--mono); font-size:15px; line-height:1.2; color:var(--fg); }
+  .stat.hi { border-top-color:var(--info); }
+  .stat.hi .v { color:var(--info); }
+
+  /* ------------------------------------------------------------------- panels */
+  main { padding:12px; display:grid; gap:10px; grid-template-columns:1fr 1fr; max-width:1720px; }
+  .full { grid-column:1 / -1; }
+  section {
+    background:var(--panel); border:1px solid var(--line); border-radius:3px;
+    padding:0 0 11px;
+  }
+  h2 {
+    margin:0 0 10px; padding:7px 12px; font-size:10px; font-weight:700;
+    color:var(--dim); text-transform:uppercase; letter-spacing:1px;
+    background:var(--panel2); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:8px; font-family:var(--mono);
+  }
+  h2 .note {
+    font-weight:400; text-transform:none; letter-spacing:0; color:var(--dimmer);
+    font-family:inherit; font-size:11px;
+  }
+  section > *:not(h2) { margin-left:12px; margin-right:12px; }
+
+  /* -------------------------------------------------------------- agent matrix */
+  .level { display:flex; align-items:stretch; gap:0; border-bottom:1px solid var(--line); }
+  .level:last-child { border-bottom:0; }
+  .level-tag {
+    flex:0 0 128px; font-size:9px; color:var(--dimmer); padding:8px 8px 8px 0;
+    text-transform:uppercase; letter-spacing:.6px; font-family:var(--mono);
+    font-weight:600; border-right:1px solid var(--line);
+  }
+  .level-agents { display:flex; gap:4px; flex-wrap:wrap; flex:1; padding:6px 0 6px 8px; }
+  .agent {
+    border:1px solid var(--line2); border-left-width:3px; border-radius:2px;
+    padding:5px 8px; background:var(--panel2); cursor:pointer; min-width:138px;
+    transition:background .12s;
+  }
+  .agent:hover { background:var(--panel3); }
+  .agent .n { font-size:11px; font-weight:600; letter-spacing:.2px; }
+  .agent .m {
+    font-size:10px; color:var(--dim); font-family:var(--mono); margin-top:2px;
+    font-variant-numeric:tabular-nums;
+  }
+  /* Status is encoded on the left border, so the state of 21 cells reads as a
+     column of stripes without any text being processed. */
+  .agent.queued { border-left-color:var(--line2); opacity:.5; }
+  .agent.unselected {
+    border-left-color:transparent; border-style:dashed; opacity:.28; cursor:default;
+  }
+  .agent.unselected:hover { background:var(--panel2); }
+  .agent.running {
+    border-left-color:var(--up); background:var(--up-bg);
+    box-shadow:inset 0 0 0 1px rgba(255,77,79,.22);
+  }
+  .agent.running .n { color:var(--up); }
+  .agent.done { border-left-color:var(--info); }
+  .agent.done .n::before { content:"\2713\00a0"; color:var(--info); font-weight:700; }
+  /* An agent that produced an elite is the only thing that earns gold. */
+  .agent.has-elite { border-left-color:var(--elite); }
+  .agent.has-elite .m { color:var(--elite); }
+
+  /* -------------------------------------------------------------------- funnel */
+  .funnel-row {
+    display:flex; align-items:center; gap:8px; height:19px; font-size:11px;
+    border-bottom:1px solid rgba(36,44,56,.5);
+  }
+  .funnel-row .lbl {
+    flex:0 0 126px; color:var(--dim); font-family:var(--mono); font-size:10px;
+    text-align:right; padding-right:2px;
+  }
+  .funnel-bar {
+    flex:1; height:13px; background:var(--panel2); overflow:hidden; display:flex;
+    border-radius:1px;
+  }
+  .funnel-bar .keep { background:var(--info); height:100%; }
+  /* Losses are amber, not red: red means "up" here, and a rejection is not a
+     market move. Amber is the attention colour throughout. */
+  .funnel-bar .lost { background:var(--warn); height:100%; opacity:.8; }
+  .funnel-row .num {
+    flex:0 0 88px; text-align:right; font-family:var(--mono); font-size:10px;
+    color:var(--fg);
+  }
+  .funnel-row.terminal { border-top:1px solid var(--line2); height:22px; }
+  .funnel-row.terminal .keep { background:var(--qual); }
+  .funnel-row.terminal .lbl { color:var(--qual); font-weight:600; }
+  .funnel-row.terminal.elite { border-top:0; }
+  .funnel-row.terminal.elite .keep { background:var(--elite); }
+  .funnel-row.terminal.elite .lbl { color:var(--elite); font-weight:600; }
+
+  /* --------------------------------------------------------------------- tables */
+  table { width:100%; border-collapse:collapse; font-size:11px; }
+  th, td { text-align:left; padding:3px 6px; }
+  thead th {
+    color:var(--dimmer); font-weight:600; font-size:9px; text-transform:uppercase;
+    letter-spacing:.6px; border-bottom:1px solid var(--line2);
+    background:var(--panel2); font-family:var(--mono);
+  }
+  tbody tr { border-bottom:1px solid rgba(36,44,56,.55); }
+  tbody tr:nth-child(even) { background:rgba(22,27,35,.45); }
+  td.num, th.num { text-align:right; font-family:var(--mono); }
+  tr.click { cursor:pointer; }
+  tr.click:hover { background:var(--panel3); }
+  .pos { color:var(--up); }        /* 红涨 */
+  .neg { color:var(--down); }      /* 绿跌 */
+  .zero { color:var(--dimmer); }
+
+  .bar { height:3px; background:var(--info); border-radius:0; margin-top:2px; }
+  .warn-box {
+    background:var(--warn-bg); border-left:3px solid var(--warn); color:var(--warn);
+    padding:7px 11px; font-size:12px; margin:0 0 5px; border-radius:0 2px 2px 0;
+  }
+  .empty { color:var(--dimmer); font-size:12px; padding:10px 2px; font-style:italic; }
+
+  /* --------------------------------------------------------------------- drawer */
+  #drawer {
+    position:fixed; top:0; right:0; width:min(780px,95vw); height:100%;
+    background:var(--panel); border-left:2px solid var(--line2);
+    transform:translateX(100%); transition:transform .16s ease-out; z-index:40;
+    display:flex; flex-direction:column;
+  }
+  #drawer.open { transform:none; }
+  #drawer .head {
+    padding:10px 14px; border-bottom:1px solid var(--line2); background:var(--panel2);
+    display:flex; align-items:center; gap:10px;
+  }
+  #drawer .head b { font-size:12px; font-family:var(--mono); letter-spacing:.3px; }
+  #drawer .body { padding:12px 14px; overflow:auto; flex:1; }
+  #drawer .body h2 { margin:12px -14px 8px; }
+  #drawer pre {
+    background:var(--bg); border:1px solid var(--line); border-left:3px solid var(--line2);
+    padding:10px; overflow:auto; font-size:11px; line-height:1.5; margin:5px 0 12px;
+    white-space:pre-wrap; word-break:break-word; color:var(--dim);
+  }
+  .x { margin-left:auto; cursor:pointer; color:var(--dim); font-size:20px; line-height:1; }
+  .x:hover { color:var(--up); }
+  .kv {
+    display:grid; grid-template-columns:auto 1fr; gap:1px 14px; font-size:11px;
+    margin-bottom:12px;
+  }
+  .kv dt { color:var(--dimmer); font-family:var(--mono); font-size:10px; }
+  .kv dd { margin:0; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .chk {
+    font-size:11px; padding:4px 0 4px 8px; border-bottom:1px solid var(--line);
+    border-left:2px solid var(--line2);
+  }
+  .chk.ok { border-left-color:var(--info); }
+  .chk.no { border-left-color:var(--warn); background:var(--warn-bg); }
+  .chk .p { color:var(--info); font-weight:700; }
+  .chk .f { color:var(--warn); font-weight:700; }
+  #scrim {
+    position:fixed; inset:0; background:rgba(0,0,0,.62); z-index:30;
+    opacity:0; pointer-events:none; transition:opacity .16s;
+  }
+  #scrim.open { opacity:1; pointer-events:auto; }
+  .sub { font-size:10px; color:var(--dimmer); }
+  .tier-elite { color:var(--elite); font-weight:600; }
+  .tier-qualified { color:var(--qual); }
+  .tier-plain { color:var(--dim); }
+  .tier-invalid { color:var(--warn); }
+  @media (max-width:1180px) { main { grid-template-columns:1fr; } }
+</style>
+</head>
+
+<body>
+
+<header>
+  <span class="brand">CogAlpha</span>
+  <span id="status" class="pill">connecting</span>
+  <span id="runname" class="pill"></span>
+  <span id="cfg" class="sub"></span>
+  <div class="stats" id="stats"></div>
+</header>
+
+<main>
+  <section class="full" id="warnbox" style="display:none"></section>
+
+  <section class="full">
+    <h2>Seven-Level Agent Hierarchy
+      <span class="note" id="agentnote"></span>
+    </h2>
+    <div id="matrix"></div>
+  </section>
+
+  <section>
+    <h2>Quality checker funnel <span class="note" id="funnelnote"></span></h2>
+    <div id="funnel"></div>
+  </section>
+
+  <section>
+    <h2>Elite trajectory <span class="note">score per generation; dashed = agent change</span></h2>
+    <svg id="traj" viewBox="0 0 560 180" preserveAspectRatio="none" style="width:100%;height:180px"></svg>
+    <div id="plateau" class="sub"></div>
+  </section>
+
+  <section>
+    <h2>LLM cost by role</h2>
+    <table><thead><tr>
+      <th>role</th><th class="num">calls</th><th class="num">tokens</th>
+      <th class="num">share</th><th class="num">mean ms</th>
+    </tr></thead><tbody id="roles"></tbody></table>
+  </section>
+
+  <section>
+    <h2>Recent calls <span class="note">click to read the prompt and response</span></h2>
+    <table><thead><tr>
+      <th class="num">#</th><th>role</th><th>agent</th>
+      <th class="num">gen</th><th class="num">tok</th><th class="num">ms</th>
+    </tr></thead><tbody id="calls"></tbody></table>
+  </section>
+
+  <section class="full" id="candsec" style="display:none">
+    <h2>Candidates <span class="note">click to read the source</span></h2>
+    <table><thead><tr>
+      <th>#</th><th>name</th><th class="num">IC</th><th class="num">RankIC</th>
+      <th class="num">ICIR</th><th class="num">RankICIR</th><th class="num">MI</th><th>origin</th>
+    </tr></thead><tbody id="cands"></tbody></table>
+  </section>
+</main>
+
+<div id="scrim"></div>
+<div id="drawer">
+  <div class="head"><b id="dtitle">detail</b><span class="x" id="dclose">&times;</span></div>
+  <div class="body" id="dbody"></div>
+</div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- small helpers
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
+  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+// Metrics can legitimately be null (not scored) -- render that as a dash rather than
+// as 0.0000, which would read as "measured, and it was zero".
+const num = (v, d = 4) => (v == null || Number.isNaN(v)) ? "&ndash;" : (+v).toFixed(d);
+const sgn = (v, d = 4) => (v == null || Number.isNaN(v)) ? "&ndash;"
+  : (v >= 0 ? "+" : "") + (+v).toFixed(d);
+// Signed metrics get the market's colour convention: 红涨绿跌. Wrapping here rather
+// than at each call site means every IC, ICIR and RankIC on the page is coloured the
+// same way by construction.
+const col = (v, d = 4) => {
+  if (v == null || Number.isNaN(v)) return '<span class="zero">&ndash;</span>';
+  const cls = v > 0 ? "pos" : v < 0 ? "neg" : "zero";
+  return `<span class="${cls}">${(v >= 0 ? "+" : "") + (+v).toFixed(d)}</span>`;
+};
+const tierCls = (t) => "tier-" + (t || "invalid");
+const K = (n) => n == null ? "&ndash;"
+  : n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n);
+const dur = (s) => {
+  if (s == null) return "&ndash;";
+  s = Math.round(s);
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60);
+  return m < 60 ? m + "m " + (s % 60) + "s" : Math.floor(m / 60) + "h " + (m % 60) + "m";
+};
+
+const LEVELS = {
+  1: "I market cycle", 2: "II extreme risk", 3: "III price-volume",
+  4: "IV price-vol", 5: "V complexity", 6: "VI regime gating", 7: "VII geometric"
+};
+
+let LAST = null;
+
+// ------------------------------------------------------------------- rendering
+function render(s) {
+  LAST = s;
+
+  // --- header ---------------------------------------------------------------
+  const st = $("status");
+  if (s.finished) { st.className = "pill done"; st.textContent = "finished"; }
+  else if (s.live) { st.className = "pill live"; st.innerHTML = '<span class="dot"></span>live'; }
+  else { st.className = "pill stale"; st.textContent = "no events"; }
+
+  $("runname").textContent = s.run_name || "";
+  const c = s.config || {};
+  $("cfg").innerHTML = [
+    c.market, c.provider, c.horizon ? c.horizon + "d" : null,
+    "fit:" + (c.fit_split || "?"),
+    c.llm_provider ? c.llm_provider + ":" + c.llm_model : null
+  ].filter(Boolean).map(esc).join(" &middot; ");
+
+  const t = s.totals || {};
+  const gp = s.generations_planned || 0;
+  // The third element flags a counter as "progress" so it gets the cyan accent rule;
+  // the rest stay neutral. Highlighting everything highlights nothing.
+  $("stats").innerHTML = [
+    ["agents", `${s.agents_done}/${s.agents_total || "?"}`, true],
+    ["generations", gp ? `${s.generations_seen}/${gp}` : String(s.generations_seen), true],
+    ["llm calls", K(t.llm_calls)],
+    ["tokens", K(t.llm_tokens)],
+    ["tok/call", t.tokens_per_call || "&ndash;"],
+    ["elapsed", dur(t.elapsed_seconds)],
+    ["unique", t.unique_structures == null ? "&ndash;" : `${t.unique_structures}`],
+  ].map(([k, v, hi]) =>
+    `<div class="stat${hi ? " hi" : ""}"><div class="k">${k}</div><div class="v">${v}</div></div>`
+  ).join("");
+
+  // --- warnings -------------------------------------------------------------
+  const wb = $("warnbox");
+  if ((s.warnings || []).length) {
+    wb.style.display = "";
+    wb.innerHTML = s.warnings.map((w) => `<div class="warn-box">${esc(w)}</div>`).join("");
+  } else { wb.style.display = "none"; }
+
+  renderMatrix(s);
+  renderFunnel(s);
+  renderTraj(s);
+  renderRoles(s);
+  renderCalls(s);
+  renderCands(s);
+}
+
+function renderMatrix(s) {
+  const agents = s.agents || [];
+  const sel = agents.filter((a) => a.selected).length;
+  $("agentnote").innerHTML =
+    `${sel} of ${agents.length} selected by golden ratio this run` +
+    (s.current_agent
+      ? ` &middot; running <b>${esc(s.current_agent)}</b> gen ${s.current_generation ?? "?"}` +
+        ` cycle ${s.current_cycle ?? "?"}`
+      : "");
+
+  const byLevel = {};
+  agents.forEach((a) => { (byLevel[a.level] = byLevel[a.level] || []).push(a); });
+
+  $("matrix").innerHTML = Object.keys(byLevel).sort().map((lv) => {
+    const cells = byLevel[lv].map((a) => {
+      const cls = ["agent", a.selected ? a.status : "unselected"];
+      if (a.n_elite > 0) cls.push("has-elite");
+      const label = a.name.replace(/^Agent/, "");
+      // Queued agents have no numbers yet; showing zeros would imply they ran and
+      // found nothing, which is a different thing entirely.
+      let m;
+      if (!a.selected) m = "not selected";
+      else if (a.status === "queued") m = "queued";
+      else m = `g${a.generations} q${a.n_qualified} e${a.n_elite}` +
+               (a.best_rank_ic != null ? ` ${col(a.best_rank_ic, 3)}` : "");
+      return `<div class="${cls.join(" ")}"${a.selected ? ` data-agent="${esc(a.name)}"` : ""}>
+        <div class="n">${esc(label)}</div><div class="m">${m}</div></div>`;
+    }).join("");
+    return `<div class="level"><div class="level-tag">${esc(LEVELS[lv] || "level " + lv)}</div>
+      <div class="level-agents">${cells}</div></div>`;
+  }).join("");
+
+  $("matrix").querySelectorAll("[data-agent]").forEach((el) => {
+    el.onclick = () => showAgent(el.dataset.agent);
+  });
+}
+
+function renderFunnel(s) {
+  const f = s.funnel || [];
+  if (!f.length) { $("funnel").innerHTML = '<div class="empty">no generation yet</div>'; return; }
+  const top = Math.max(1, f[0].survivors);
+
+  // Say so when the funnel is not the newest generation, rather than letting a stale
+  // shape look current.
+  const fg = s.funnel_generation || {};
+  $("funnelnote").innerHTML = fg.generation != null
+    ? `${esc(fg.agent)} gen ${fg.generation} &mdash; the latest generation produced nothing`
+    : `${esc((s.latest_generation || {}).agent || "")} gen ${(s.latest_generation || {}).generation ?? ""}`;
+
+  $("funnel").innerHTML = f.map((row) => {
+    const keep = (row.survivors / top) * 100;
+    const lost = (row.dropped / top) * 100;
+    const cls = row.stage === "elite" ? "funnel-row terminal elite"
+      : row.stage === "qualified" ? "funnel-row terminal" : "funnel-row";
+    const drop = row.dropped
+      ? ` <span style="color:var(--warn)">&minus;${row.dropped}</span>` : "";
+    return `<div class="${cls}">
+      <div class="lbl">${esc(row.stage)}</div>
+      <div class="funnel-bar"><div class="keep" style="width:${keep}%"></div>
+        <div class="lost" style="width:${lost}%"></div></div>
+      <div class="num">${row.survivors}${drop}</div></div>`;
+  }).join("");
+}
+
+function renderTraj(s) {
+  const pts = (s.elite_trajectory || []).filter((p) => p.score != null);
+  const svg = $("traj");
+  if (pts.length < 2) {
+    svg.innerHTML = `<text x="14" y="90" fill="#5d6a7d" font-size="11" font-style="italic">
+      ${pts.length ? "one point so far" : "no elite scored yet"}</text>`;
+    $("plateau").textContent = "";
+    return;
+  }
+  const W = 560, H = 180, P = 26;
+  const xs = (i) => P + (i / (pts.length - 1)) * (W - P * 2);
+  const lo = Math.min(...pts.map((p) => p.score));
+  const hi = Math.max(...pts.map((p) => p.score));
+  const pad = (hi - lo) * 0.15 || 0.05;
+  const ys = (v) => H - P - ((v - lo + pad) / (hi - lo + pad * 2)) * (H - P * 2);
+
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)},${ys(p.score).toFixed(1)}`).join("");
+  const area = line + `L${xs(pts.length - 1).toFixed(1)},${H - P}L${xs(0).toFixed(1)},${H - P}Z`;
+  // Gridlines: a trading chart is read for level, not just shape, so quartile rules
+  // let you place a point without tracing back to the axis.
+  const grid = [0.25, 0.5, 0.75].map((f) => {
+    const y = (P + f * (H - P * 2)).toFixed(1);
+    return `<line x1="${P}" y1="${y}" x2="${W - P}" y2="${y}" stroke="#242c38"/>`;
+  }).join("");
+  // Agent boundaries: each agent restarts at generation 0, so a drop across a
+  // boundary is a new search beginning, not the search degrading.
+  const bounds = pts.map((p, i) => p.boundary && i
+    ? `<line x1="${xs(i).toFixed(1)}" y1="${P - 6}" x2="${xs(i).toFixed(1)}" y2="${H - P}"
+        stroke="#36414f" stroke-dasharray="2 3"/>` : "").join("");
+  // Gold marks the generations that actually produced an elite; the rest of the line
+  // is the score trend and gets the neutral machine colour.
+  const dots = pts.map((p, i) =>
+    `<rect x="${(xs(i) - 1.8).toFixed(1)}" y="${(ys(p.score) - 1.8).toFixed(1)}"
+       width="3.6" height="3.6" fill="${p.n_elite ? "#ffcf40" : "#2fb8e8"}"/>`).join("");
+
+  svg.innerHTML = `
+    ${grid}
+    <line x1="${P}" y1="${H - P}" x2="${W - P}" y2="${H - P}" stroke="#36414f"/>
+    <line x1="${P}" y1="${P - 6}" x2="${P}" y2="${H - P}" stroke="#36414f"/>
+    ${bounds}
+    <path d="${area}" fill="rgba(255,207,64,.07)"/>
+    <path d="${line}" fill="none" stroke="#ffcf40" stroke-width="1.4"/>
+    ${dots}
+    <text x="3" y="${P + 3}" fill="#5d6a7d" font-size="9"
+      font-family="ui-monospace,monospace">${hi.toFixed(3)}</text>
+    <text x="3" y="${H - P + 3}" fill="#5d6a7d" font-size="9"
+      font-family="ui-monospace,monospace">${lo.toFixed(3)}</text>`;
+
+  const pl = s.plateau || {};
+  $("plateau").innerHTML = !pl.armed
+    ? `plateau rule needs ${2 * (pl.window || 3)} generations per agent; ` +
+      `${pl.observations || 0} so far`
+    : `plateau &delta; = <b>${pl.delta == null ? "&ndash;" : col(pl.delta, 5)}</b> ` +
+      `against a ${pl.delta_limit} limit` +
+      (pl.would_stop ? ' &mdash; <span style="color:var(--warn)">this agent stops next check</span>' : "");
+}
+
+function renderRoles(s) {
+  const rows = s.calls_by_role || [];
+  $("roles").innerHTML = rows.length ? rows.map((r) => `<tr>
+    <td>${esc(r.role)}</td><td class="num">${r.calls}</td>
+    <td class="num">${K(r.tokens)}</td>
+    <td class="num">${(r.token_share * 100).toFixed(1)}%
+      <div class="bar" style="width:${(r.token_share * 100).toFixed(1)}%"></div></td>
+    <td class="num">${r.mean_latency_ms}</td></tr>`).join("")
+    : '<tr><td colspan="5" class="empty">no calls yet</td></tr>';
+}
+
+function renderCalls(s) {
+  const rows = (s.recent_calls || []).slice(0, 22);
+  $("calls").innerHTML = rows.length ? rows.map((r) => `<tr class="click" data-seq="${r.seq}">
+    <td class="num">${r.seq ?? ""}</td><td>${esc(r.role)}</td>
+    <td>${esc((r.agent || "").replace(/^Agent/, ""))}</td>
+    <td class="num">${r.generation ?? ""}</td>
+    <td class="num">${K(r.tokens)}</td><td class="num">${r.latency_ms ?? ""}</td></tr>`).join("")
+    : '<tr><td colspan="6" class="empty">no calls yet</td></tr>';
+  $("calls").querySelectorAll("[data-seq]").forEach((el) => {
+    el.onclick = () => showCall(el.dataset.seq);
+  });
+}
+
+function renderCands(s) {
+  const rows = s.candidates || [];
+  $("candsec").style.display = rows.length ? "" : "none";
+  $("cands").innerHTML = rows.map((r, i) => `<tr class="click" data-file="${esc(r.file)}">
+    <td>${i + 1}</td><td class="mono">${esc((r.file || "").replace(/^\d+_/, "").replace(/\.py$/, ""))}</td>
+    <td class="num">${col(r.ic)}</td><td class="num">${col(r.rankic)}</td>
+    <td class="num">${col(r.icir, 3)}</td><td class="num">${col(r.rankicir, 3)}</td>
+    <td class="num">${num(r.mi)}</td>
+    <td class="sub">${esc(r.origin || "")}</td></tr>`).join("");
+  $("cands").querySelectorAll("[data-file]").forEach((el) => {
+    el.onclick = () => showCandidate(el.dataset.file);
+  });
+}
+
+// ---------------------------------------------------------------- drawer panels
+function openDrawer(title, html) {
+  $("dtitle").innerHTML = title;
+  $("dbody").innerHTML = html;
+  $("drawer").classList.add("open");
+  $("scrim").classList.add("open");
+}
+function closeDrawer() {
+  $("drawer").classList.remove("open");
+  $("scrim").classList.remove("open");
+}
+$("dclose").onclick = closeDrawer;
+$("scrim").onclick = closeDrawer;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+
+async function showCall(seq) {
+  openDrawer(`call #${esc(seq)}`, '<div class="empty">loading&hellip;</div>');
+  try {
+    const r = await fetch(`/api/call/${seq}`);
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    const tags = d.tags || {}, u = d.usage || {};
+    openDrawer(`call #${esc(seq)} &middot; ${esc(tags.role || "")}`, `
+      <dl class="kv">
+        ${Object.entries(tags).map(([k, v]) =>
+          `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v) ? v.join(", ") : v)}</dd>`).join("")}
+        <dt>model</dt><dd>${esc(d.model)}</dd>
+        <dt>temperature</dt><dd>${esc(d.temperature)}</dd>
+        <dt>tokens</dt><dd>${u.prompt_tokens ?? "?"} in / ${u.completion_tokens ?? "?"} out</dd>
+        <dt>latency</dt><dd>${esc(d.latency_ms)} ms</dd>
+      </dl>
+      <h2>system</h2><pre>${esc(d.system || "(none)")}</pre>
+      <h2>prompt</h2><pre>${esc(d.prompt)}</pre>
+      <h2>response</h2><pre>${esc(d.response)}</pre>`);
+  } catch (e) {
+    openDrawer(`call #${esc(seq)}`, `<div class="warn-box">${esc(e.message || e)}</div>`);
+  }
+}
+
+function showAgent(name) {
+  const a = (LAST.agents || []).find((x) => x.name === name);
+  if (!a) return;
+  const traj = (LAST.elite_trajectory || []).filter((p) => p.agent === name);
+  openDrawer(esc(name), `
+    <dl class="kv">
+      <dt>level</dt><dd>${a.level} &mdash; ${esc(LEVELS[a.level] || "")}</dd>
+      <dt>status</dt><dd>${esc(a.status)}</dd>
+      <dt>generations</dt><dd>${a.generations}</dd>
+      <dt>generated</dt><dd>${a.n_generated}</dd>
+      <dt>passed checker</dt><dd>${a.n_passed}</dd>
+      <dt>qualified</dt><dd>${a.n_qualified}</dd>
+      <dt>elite</dt><dd>${a.n_elite}</dd>
+      <dt>best score</dt><dd>${num(a.best_score, 4)}</dd>
+      <dt>best RankIC</dt><dd>${col(a.best_rank_ic)}</dd>
+      <dt>llm calls</dt><dd>${a.llm_calls}</dd>
+      <dt>wall time</dt><dd>${dur(a.seconds)}</dd>
+    </dl>
+    ${a.stopped_early ? `<div class="warn-box">stopped early: ${esc(a.stopped_early)}</div>` : ""}
+    <h2>per-generation</h2>
+    <table><thead><tr><th class="num">gen</th><th class="num">cycle</th>
+      <th class="num">elite</th><th class="num">score</th></tr></thead><tbody>
+      ${traj.map((p) => `<tr class="click" data-gen="${p.generation}">
+        <td class="num">${p.generation}</td><td class="num">${p.cycle}</td>
+        <td class="num">${p.n_elite}</td><td class="num">${num(p.score, 4)}</td></tr>`).join("")
+        || '<tr><td colspan="4" class="empty">not started</td></tr>'}
+    </tbody></table>`);
+  $("dbody").querySelectorAll("[data-gen]").forEach((el) => {
+    el.onclick = () => showGeneration(name, el.dataset.gen);
+  });
+}
+
+async function showGeneration(agent, gen) {
+  openDrawer(`${esc(agent)} &middot; gen ${esc(gen)}`, '<div class="empty">loading&hellip;</div>');
+  const r = await fetch(`/api/generation/${encodeURIComponent(agent)}/${gen}`);
+  const rows = await r.json();
+  openDrawer(`${esc(agent)} &middot; gen ${esc(gen)}`, rows.length ? `
+    <table><thead><tr><th>name</th><th>tier</th><th>op</th>
+      <th class="num">RankIC</th><th>note</th></tr></thead><tbody>
+      ${rows.map((x) => `<tr class="click" data-alpha="${esc(x.alpha_id)}">
+        <td class="mono">${esc(x.name)}</td>
+        <td class="${tierCls(x.tier)}">${esc(x.tier)}</td>
+        <td class="sub">${esc(x.op || "")}</td>
+        <td class="num">${col((x.fitness || {}).rank_ic)}</td>
+        <td class="sub">${esc((x.rejected_at ? x.rejected_at + ": " : "") +
+          (x.reject_reason || "").slice(0, 90))}</td></tr>`).join("")}
+    </tbody></table>`
+    : `<div class="empty">alphas.jsonl is only written when the run saves,
+       so per-alpha detail appears after the run finishes.</div>`);
+  $("dbody").querySelectorAll("[data-alpha]").forEach((el) => {
+    el.onclick = () => showAlpha(el.dataset.alpha);
+  });
+}
+
+async function showAlpha(id) {
+  openDrawer(esc(id), '<div class="empty">loading&hellip;</div>');
+  const r = await fetch(`/api/alpha/${encodeURIComponent(id)}`);
+  if (!r.ok) { openDrawer(esc(id), `<div class="warn-box">${esc(await r.text())}</div>`); return; }
+  const d = await r.json();
+  const f = d.fitness || {}, l = d.lineage || {};
+  openDrawer(esc(d.name), `
+    <dl class="kv">
+      <dt>tier</dt><dd class="${tierCls(d.tier)}">${esc(d.tier)}</dd>
+      <dt>IC / RankIC</dt><dd>${col(f.ic)} / ${col(f.rank_ic)}</dd>
+      <dt>ICIR / RankICIR</dt><dd>${col(f.icir, 3)} / ${col(f.rank_icir, 3)}</dd>
+      <dt>MI</dt><dd>${num(f.mi)}</dd>
+      <dt>days / nan</dt><dd>${f.n_days ?? "?"} / ${f.nan_ratio == null ? "?" : (f.nan_ratio * 100).toFixed(1) + "%"}</dd>
+      <dt>origin</dt><dd>${esc(l.op)} by ${esc(l.agent)} (level ${l.level ?? "?"}, ${esc(l.guidance_mode || "?")})</dd>
+      <dt>generation</dt><dd>${l.generation} cycle ${l.cycle}</dd>
+      ${(l.parents || []).length ? `<dt>parents</dt><dd>${esc((l.parents || []).join(", "))}</dd>` : ""}
+      ${l.repair_rounds || l.improve_rounds
+        ? `<dt>revisions</dt><dd>${l.repair_rounds} repair, ${l.improve_rounds} improve</dd>` : ""}
+    </dl>
+    ${d.rejected_at ? `<div class="warn-box">rejected at ${esc(d.rejected_at)}:
+      ${esc(d.reject_reason)}</div>` : ""}
+    <h2>checks</h2>
+    ${(d.checks || []).map((c) => `<div class="chk ${c.passed ? "ok" : "no"}">
+      <span class="${c.passed ? "p" : "f"}">${c.passed ? "✓" : "✗"}</span>
+      <b>${esc(c.stage)}</b> &mdash; ${esc(c.detail || "")}</div>`).join("")
+      || '<div class="empty">none recorded</div>'}
+    <h2 style="margin-top:14px">code</h2><pre>${esc(d.code)}</pre>`);
+}
+
+async function showCandidate(file) {
+  openDrawer(esc(file), '<div class="empty">loading&hellip;</div>');
+  const r = await fetch(`/api/candidate/${encodeURIComponent(file)}`);
+  if (!r.ok) { openDrawer(esc(file), `<div class="warn-box">${esc(await r.text())}</div>`); return; }
+  const d = await r.json();
+  openDrawer(esc(file), `<pre>${esc(d.code)}</pre>`);
+}
+
+// ------------------------------------------------------------------- transport
+// SSE with a polling fallback: an SSH tunnel or a proxy that buffers can break the
+// event stream, and a dashboard that silently freezes is worse than a slow one.
+function connect() {
+  let usingSSE = false;
+  try {
+    const es = new EventSource("/api/stream");
+    es.onmessage = (e) => { usingSSE = true; render(JSON.parse(e.data)); };
+    es.onerror = () => {
+      if (!usingSSE) { es.close(); poll(); }
+      // If SSE worked once, let the browser reconnect on its own (retry: is set
+      // server-side) rather than racing it with a second transport.
+    };
+  } catch (_) { poll(); }
+  // Cold start: paint immediately instead of waiting for the first tick.
+  fetch("/api/state").then((r) => r.json()).then(render).catch(() => {});
+}
+function poll() {
+  setInterval(() => {
+    fetch("/api/state").then((r) => r.json()).then(render).catch(() => {
+      $("status").className = "pill stale";
+      $("status").textContent = "disconnected";
+    });
+  }, 2000);
+}
+connect();
+</script>
+</body>
+</html>

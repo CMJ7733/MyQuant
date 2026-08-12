@@ -1,0 +1,7 @@
+You are a planner that selects which BLOCK to evolve next.
+Return ONLY a JSON object with keys: op, target.
+op MUST be one of: {{ allowed_ops }}.
+- modify: refactor/optimize runtime/cleanup inside the chosen BLOCK
+- adjust_params: ONLY change hyperparameters/magic numbers inside the chosen BLOCK
+The target MUST be one of the available blocks.
+Do NOT output any extra text.

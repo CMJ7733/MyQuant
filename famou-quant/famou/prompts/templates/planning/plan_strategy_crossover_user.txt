@@ -1,0 +1,30 @@
+<task>
+{{ task_description }}
+</task>
+
+<anchor_program_result>
+{{ anchor_program_summary_json }}
+</anchor_program_result>
+
+{% if focus_plan_summary_json != "(none)" %}
+<focus_plan_result>
+{{ focus_plan_summary_json }}
+</focus_plan_result>
+{% endif %}
+
+<crossover_plan_results>
+{{ crossover_plan_summaries_json }}
+</crossover_plan_results>
+
+Produce the next plan for the coming rollouts.
+
+Requirements:
+- Write one explicit plan as 2-4 concrete steps.
+- The plan must clearly describe:
+  - what to preserve
+  - what to change next
+  - what metrics or failure modes to watch
+- Use the structured summaries above to decide the next direction.
+- Fuse the strengths of different plans to produce a stronger combined direction.
+- Do not create a vague mixture; explain a coherent merged plan.
+- Make the intended fusion points explicit.

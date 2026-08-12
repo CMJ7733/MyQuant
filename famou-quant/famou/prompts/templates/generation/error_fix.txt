@@ -1,0 +1,52 @@
+You are an expert {{ language }} programmer tasked with fixing errors in code.
+
+# Current Program with Errors
+{{ parent_program }}
+
+# Error Analysis
+The program above has the following errors that need to be fixed:
+
+```
+{{ error_details }}
+```
+
+{% if working_examples is defined and working_examples%}
+# Working Examples for Reference
+These programs are working correctly and may provide helpful patterns:
+{{ working_examples }}
+{% endif %}
+
+# Task
+Fix the errors in the current program. Focus on:
+
+1. **Understand the error**: Analyze the error message and traceback
+2. **Identify root cause**: Determine what's causing the error
+3. **Apply minimal fix**: Make the smallest change that fixes the error
+4. **Preserve functionality**: Don't change working parts of the code
+
+Common error patterns to check:
+- Syntax errors: Missing colons, parentheses, quotes
+- Type errors: Wrong types passed to functions
+- Name errors: Undefined variables or functions
+- Index errors: Out of bounds array access
+- Import errors: Missing or incorrect imports
+- Logic errors: Incorrect conditionals or loops
+
+{% if language == "python" %}
+The code outside # EVOLVE-BLOCK-START and # EVOLVE-BLOCK-END remains unchanged.
+{% endif %}
+
+IMPORTANT: Your fixed program should maintain the same inputs and outputs
+as the original, but with the errors corrected.
+
+# Format your solution as follows:
+
+```{{ language }}
+# Your fixed program here
+```
+
+{% if language == "python" %}
+```required_packages
+# required_packages here
+```
+{% endif %}

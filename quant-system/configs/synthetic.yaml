@@ -1,0 +1,50 @@
+# Offline smoke configuration: synthetic panel + deterministic mock backend.
+#
+# Nothing here touches the network or costs anything. Use it to check the whole
+# pipeline runs end to end after a change:
+#
+#     cogalpha search --config configs/synthetic.yaml --out runs/
+#
+# The synthetic panel plants a known signal -- the paper's seed alpha
+# (high - close) / volume -- calibrated so its RankIC lands near the paper's 0.08
+# rather than at an implausible 0.3. So a run that finds nothing here indicates a
+# broken pipeline, not a hard dataset.
+
+data:
+  provider: synthetic
+  horizon: 10
+  synth_n_instruments: 60
+  synth_n_days: 900
+  synth_seed: 7
+  synth_signal_strength: 0.0012
+  # The synthetic panel has no real calendar; point every split at its full span
+  # and let fit_split pick the window.
+  train: ["2015-01-05", "2017-06-30"]
+  valid: ["2017-07-01", "2018-03-31"]
+  test:  ["2018-04-01", "2018-12-31"]
+  fit_split: train
+
+llm:
+  provider: mock
+  mock_seed: 0
+
+evolution:
+  # A short schedule: enough to exercise both sub-cycle restarts and the evolution
+  # operators, small enough to finish in under a minute.
+  agents_per_run: 2
+  generations: 6
+  sub_cycles: 2
+  initial_pool_size: 12
+  parent_pool_size: 8
+  children_multiplier: 2
+  alphas_per_agent: 5
+  plateau_window: 3
+  seed: 42
+
+quality:
+  exec_timeout_s: 30.0
+  memory_limit_mb: 4096
+
+run:
+  out_dir: runs
+  top_candidates: 10

@@ -1,0 +1,280 @@
+# Circle Packing Experiment Configuration
+# Target: Maximize sum of radii for n=26 circles in unit square
+# AlphaEvolve benchmark result: 2.635
+
+# =============================================================================
+# Experiment Configuration - WHAT to optimize
+# =============================================================================
+experiment:
+  name: mlebench-nomad2018-predict-transparent-conductors
+  task_description: |
+    You are an experienced machine learning algorithm engineer with expertise in end-to-end system optimization, feature engineering, robust neural network design, and efficient model development using PyTorch.
+    Your current task is to design a machine learning/deep learning algorithm based on the requirements above. You have full freedom to redesign, enhance, or replace any of the following components:
+     - Data loading and preprocessing (including augmentation, normalization, etc.)
+     - Feature engineering or preprocessing (including selection, transformation, and normalization)
+     - Choose suitable state-of-the-art models tailored to the task characteristics.
+     - Integration of ML/DL algorithms (XGBoost, Random Forest, etc.)
+     - Neural network architecture (custom layers, activation functions, attention mechanisms, normalization, regularization, etc.)
+     - Training objectives (custom loss functions, auxiliary tasks, or multi-task learning)
+     - Regularization strategies (dropout, weight decay, label smoothing, etc.)
+     - Hyperparameter optimization (learning rate, schedulers, batch size, model depth/width, etc.)
+     - Cross-validation for hyperparameter tuning (searching for optimal hyperparameters on the training set via cross-validation, then training the final model on the validation set)
+     - Efficient training/inference pipelines (batching, data loading, distributed training, etc.)
+     - Numerical stability and reproducibility (any known techniques to improve performance or efficiency in this domain)
+     - ML tricks, Kaggle techniques, feature selection, feature engineering, model ensembling, etc.
+     - You may combine multiple steps, design new functional pipelines, restructure model architectures, or adopt any standard or innovative ML methods (as long as implemented in Python).
+     - **When utilizing machine learning frameworks like LightGBM (lgb), XGBoost (xgb), and CatBoost, training should be performed on GPU rather than CPU.** 
+     - **lgb设置参数时，请务必使用GPU,CPU训练时间太长，无法接受,如果无法使用GPU训练lgb，那就不要使用lgb这个模型，换其他的方法，这是必须要遵守的规则.**
+      ```
+      'device': 'cuda', 
+      'gpu_device_id': 0
+      ```
+    **When utilizing machine learning frameworks like LightGBM (lgb), XGBoost (xgb), and CatBoost, training should be performed on GPU rather than CPU.** 
+
+    # Core Task Info
+    {
+        "Task Type": "Regression",
+        "Data Type": "Tabular",
+        "Brief Description": "This competition challenges participants to predict two key properties of transparent conductors—formation energy and bandgap energy—based on their atomic structures. The goal is to develop machine learning models that can accelerate the discovery of new materials with improved properties for technologies like solar cells and flat-panel displays, bypassing computationally expensive quantum-mechanical calculations.",
+        "Dataset Description": "The dataset consists of tabular data and spatial geometry files for 3,000 materials. The primary data is contained in two CSV files:\n\n- `train.csv`: Contains 2160 samples with 12 feature columns and 2 target columns. The features include material properties like `spacegroup`, `number_of_total_atoms`, relative atomic compositions (`percent_atom_al`, `percent_atom_ga`, `percent_atom_in`), and lattice parameters (vectors and angles). The two target variables to be predicted are `formation_energy_ev_natom` and `bandgap_energy_ev`.\n- `test.csv`: Contains 240 samples with the same 12 feature columns as the training set, for which predictions are required.\n\nAdditionally, for each material ID in the train and test sets, there is a corresponding `geometry.xyz` file located in the `train/{id}/` and `test/{id}/` directories. These files provide the spatial positions (Cartesian coordinates) of all atoms within the material's unit cell, offering detailed structural information.",
+        "Submission Specifications": "For each `id` in the test set, you must predict a value for both `formation_energy_ev_natom` and `bandgap_energy_ev`. The submission file must be a CSV with a header and three columns: `id`, `formation_energy_ev_natom`, and `bandgap_energy_ev`. An example format is provided in `sample_submission.csv`.",
+        "Submission channel number to each sample": 2,
+        "Metric Evaluation Description": "Submissions are evaluated on the column-wise root mean squared logarithmic error (RMSLE). The RMSLE is calculated independently for each of the two target columns (`formation_energy_ev_natom` and `bandgap_energy_ev`). The final score is the mean of the RMSLE values from these two columns. The formula for RMSLE for a single column is: \n\n$\\sqrt{\\frac{1}{n}\\sum_{i=1}^n(\\log{(p_i + 1)} - \\log{(a_i+1)})^2}$\n\nwhere:\n- n is the total number of observations\n- p_i is your prediction\n- a_i is the actual value\n- log(x) is the natural logarithm of x",
+        "Metric Name": "Mean Column-wise Root Mean Squared Logarithmic Error",
+        "Metric Direction": false,
+        "Longer time limit required": "True"
+    }
+
+    # Dataset
+
+    ## Data path:
+    /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/nomad2018-predict-transparent-conductors/prepared/public/
+    
+    ## File tree:
+    ```
+    ./
+    ├── test/
+    │   ├── 1/
+    │   │   ├── geometry.xyz (3.0 kB)
+    │   ├── 10/
+    │   │   ├── geometry.xyz (3.0 kB)
+    │   ├── ... (+238 more directories)
+    ├── train/
+    │   ├── 1/
+    │   │   ├── geometry.xyz (5.5 kB)
+    │   ├── 10/
+    │   │   ├── geometry.xyz (2.3 kB)
+    │   ├── ... (+2158 more directories)
+    ├── train.csv (196.7 kB)
+    ├── test.csv (18.5 kB)
+    ├── description.md (7.7 kB)
+    ├── sample_submission.csv (4.3 kB)```
+    
+    
+    ## File details:
+    
+     (Showing details for representative files out of many)
+    
+    ### sample_submission.csv: 
+    #### 1.DataFrame preview:
+    It has 240 rows and 3 columns.
+    Here is some information about the columns:
+    bandgap_energy_ev (float64) has 1 unique values: [1.8892]
+    formation_energy_ev_natom (float64) has 1 unique values: [0.1779]
+    id (int64) has range: 1.00 - 240.00, 0 nan values
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+       id  formation_energy_ev_natom  bandgap_energy_ev
+    0   1                     0.1779             1.8892
+    1   2                     0.1779             1.8892
+    2   3                     0.1779             1.8892
+    
+    ### test.csv: 
+    #### 1.DataFrame preview:
+    It has 240 rows and 12 columns.
+    Here is some information about the columns:
+    id (int64) has range: 1.00 - 240.00, 0 nan values
+    lattice_angle_alpha_degree (float64) has range: 82.74 - 100.67, 0 nan values
+    lattice_angle_beta_degree (float64) has range: 81.64 - 105.93, 0 nan values
+    lattice_angle_gamma_degree (float64) has range: 29.73 - 120.02, 0 nan values
+    lattice_vector_1_ang (float64) has range: 3.43 - 24.86, 0 nan values
+    lattice_vector_2_ang (float64) has range: 3.00 - 10.19, 0 nan values
+    lattice_vector_3_ang (float64) has range: 5.71 - 24.90, 0 nan values
+    number_of_total_atoms (float64) has 6 unique values: [40.0, 80.0, 30.0, 60.0, 10.0, 20.0]
+    percent_atom_al (float64) has range: 0.00 - 0.97, 0 nan values
+    percent_atom_ga (float64) has range: 0.00 - 0.94, 0 nan values
+    percent_atom_in (float64) has range: 0.00 - 0.94, 0 nan values
+    spacegroup (int64) has 6 unique values: [33, 167, 227, 206, 12, 194]
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+       id  spacegroup  number_of_total_atoms  percent_atom_al  percent_atom_ga  ...  lattice_vector_2_ang  lattice_vector_3_ang  lattice_angle_alpha_degree  lattice_angle_beta_degree  lattice_angle_gamma_degree
+    0   1          33                   40.0           0.5000           0.0625  ...                8.9682                9.5964                     90.0031                    90.0004                     90.0006
+    1   2          33                   80.0           0.4062           0.1562  ...                9.0056                9.6321                     90.0022                    90.0002                     90.0005
+    2   3         167                   30.0           0.8333           0.0833  ...                4.8964               13.3033                     89.9868                    90.0141                    120.0017
+    
+    [3 rows x 12 columns]
+    
+    ### train.csv: 
+    #### 1.DataFrame preview:
+    It has 2160 rows and 14 columns.
+    Here is some information about the columns:
+    bandgap_energy_ev (float64) has range: 0.00 - 5.29, 0 nan values
+    formation_energy_ev_natom (float64) has range: 0.00 - 0.66, 0 nan values
+    id (int64) has range: 1.00 - 2160.00, 0 nan values
+    lattice_angle_alpha_degree (float64) has range: 83.19 - 101.23, 0 nan values
+    lattice_angle_beta_degree (float64) has range: 82.11 - 106.17, 0 nan values
+    lattice_angle_gamma_degree (float64) has range: 29.76 - 120.05, 0 nan values
+    lattice_vector_1_ang (float64) has range: 3.04 - 24.91, 0 nan values
+    lattice_vector_2_ang (float64) has range: 2.94 - 10.29, 0 nan values
+    lattice_vector_3_ang (float64) has range: 5.67 - 25.35, 0 nan values
+    number_of_total_atoms (float64) has 6 unique values: [80.0, 40.0, 20.0, 30.0, 60.0, 10.0]
+    percent_atom_al (float64) has range: 0.00 - 1.00, 0 nan values
+    percent_atom_ga (float64) has range: 0.00 - 1.00, 0 nan values
+    percent_atom_in (float64) has range: 0.00 - 1.00, 0 nan values
+    spacegroup (int64) has 6 unique values: [206, 227, 12, 33, 167, 194]
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+       id  spacegroup  number_of_total_atoms  percent_atom_al  percent_atom_ga  ...  lattice_angle_alpha_degree  lattice_angle_beta_degree  lattice_angle_gamma_degree  formation_energy_ev_natom  bandgap_energy_ev
+    0   1         206                   80.0           0.3125            0.625  ...                     90.0047                    90.0045                     89.9950                     0.1337             2.6562
+    1   2         206                   80.0           1.0000            0.000  ...                     90.0024                    90.0036                     89.9994                     0.0738             5.2114
+    2   3         227                   40.0           0.8125            0.000  ...                     89.9999                    89.9980                    120.0005                     0.3671             1.8353
+    
+    [3 rows x 14 columns]
+
+    # Other Requirements
+     - Code Generation Requirements:
+        - Library Imports: All libraries must be imported at the beginning of the file. Implicit imports are prohibited.
+        - Feature Processing: Handle missing values and features conservatively. For uncertain feature types, first determine the type before selecting imputation and processing strategies.
+        - Computing resource: Provides sufficient CPU computing power and 1 A800 graphics cards, you can use them freely if necessary.
+        - CPU resources are relatively sufficient, so it is appropriate to run more workers during data processing and loading.
+        - Maximize GPU utilization and estimate a suitable batch size based on the number of model parameters.
+        - Try to use the latest models, which often bring better results. For example, efficient_net is often better than restnet, and the larger size of efficient_net, such as large, is also better than base.
+        - If you train a deep learning model, do not train for more than 10 epochs at the beginning. You can adjust it according to the results of the code execution. If it is underfitting, you can increase the epochs.
+        - For a deep learning task, predictions need to be made after each epoch of training and the corresponding submission_epoch.csv file needs to be generated. The storage path should remain consistent. For example, for a task that trains for 3 epochs, the first round of training predictions is saved as `submission_1.csv`, the second round of training predictions is saved as `submission_2.csv`, and so on...
+        - You need to save the trained model to the specified save address above. The model should be saved in the format of the `transformers` library. Furthermore, ensure that each epoch's model is saved in a folder following the naming convention `model_name_epoch`.
+        - If you intend to use certain models, you should use the name from Hugging Face rather than a local directory.
+        - Prioritize the `transformers` library over `timm` for all model loading operations.
+        - When a pre-trained model download from a remote repository like Hugging Face fails, attempt to use a different model rather than retrying the same one.
+        - **Do not use exception handling mechanisms in any data loading steps; expose potential issues instead, and never fabricate submission files.**
+        
+     - Code Style:
+        - Clear variable naming
+        - Optional type annotations
+        - Brief comments for key steps
+        - Print information about key steps instead of using tqdm to print the training process
+        - All variables and standard library functions must be defined before use
+        - Directly generate a complete, end-to-end CSV output
+        - Provide executable code that runs without errors and produces the **submission.csv** file as required
+        Suppress all warnings to avoid displaying warning messages
+    
+    ## Ultimate Goal
+     - Maximize your score in this task/competition and rank higher on the leaderboard. Apply a combination of techniques (machine learning knowledge and Kaggle competition tricks) to achieve this.
+
+    ## File Paths
+     - Submission file Save path (submission file): /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/nomad2018-predict-transparent-conductors/submission.csv
+     - Model Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/nomad2018-predict-transparent-conductors/model_save
+     - Read path: /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/nomad2018-predict-transparent-conductors/prepared/public/
+
+    
+  language: python
+  strategy: example_strategy  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 50
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 100
+    migration_interval: 5
+    migration_size: 1
+    migration_topology: ring
+    reset_interval: 15
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    api_base: http://211.23.3.237:27544/v1
+    model: gemini-3-pro-preview
+    api_key: YOUR_API_KEY  # Replace with your API key or use environment variable
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 3600
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 14400
+    # GPU Usage (Optional)
+    gpu_ids: [2]      # Available GPU IDs (empty list = no GPU)
+    gpu_num_each_run: 1.0      # Number of GPUs per evaluation task
+    input_params:
+      competition_name: nomad2018-predict-transparent-conductors
+  
+  # Monitoring Configuration (Optional)
+  monitor:
+    enabled: true  # Set to false to disable monitoring
+    type: wandb  # Monitoring backend type (currently only 'wandb' is supported)
+
+    # WandB-specific settings
+    wandb:
+      project: famou-mlebench  # WandB project name
+      entity: null  # WandB entity (username or team), null for default
+      run_name: null  # Run name, null for auto-generation
+      group: null  # Group name for grouping related runs
+      tags:
+        - mlebench
+        - creative_exploration
+      notes: "Circle packing optimization with creative exploration strategy"
+
+      # Async logging settings
+      async_mode: true  # Enable asynchronous (non-blocking) logging
+      num_workers: 4  # Number of async worker threads
+      queue_size: 100  # Max queue size for async logging
+
+      # What to monitor
+      track_metrics:
+        islands: true  # Track metrics for each island
+        performance: true  # Track performance metrics (best, avg, median scores)
+        population: true  # Track population metrics (size, generations)
+        diversity: true  # Track diversity metrics (genetic, code diversity)
+        cost: true  # Track LLM API costs
+      track_artifacts: true  # Track artifacts (best programs, visualizations)
+      track_lineage_tree: true  # Track lineage tree visualization
+      checkpoint_interval: 1  # Record metrics every N iterations
+
+  # langfuse configuration (optional)
+  # langfuse:
+  #   enabled: false  # Set to false to disable Langfuse integration
+  #   public_key: your_public_key
+  #   secret_key: your_secret_key
+  #   base_url: https://us.cloud.langfuse.com
+
+
+
+# =============================================================================
+# Module Parameters (optional) - ALGORITHM parameters
+# =============================================================================
+

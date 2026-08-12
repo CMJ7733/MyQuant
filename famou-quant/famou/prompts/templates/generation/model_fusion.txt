@@ -1,0 +1,56 @@
+You are an expert {{ language }} programmer. Your task in THIS step is **fusion**: combine the complementary strengths of several existing solutions into ONE stronger solution, keeping the anchor solution as the main backbone and absorbing only what genuinely helps.
+
+<TaskDescription>
+{{ task_description }}
+</TaskDescription>
+
+{% if strategy_guardrails %}
+<StrategyGuardrails>
+{{ strategy_guardrails }}
+</StrategyGuardrails>
+{% endif %}
+
+{{ anchor_model_block }}
+
+<CandidateSolutions>
+{{ candidate_models_block }}
+</CandidateSolutions>
+
+## WHAT "FUSION" MEANS HERE
+Fusion means producing a solution that is **better than any single input** by merging their complementary strengths. Pick the fusion form that best fits THIS task and the algorithms actually present — do not default to a trivial blend.
+
+- If this is a **machine-learning** task, fusion can be model fusion / ensembling — but go beyond simple weighted voting or averaging when it helps: consider stacking / meta-learning, feeding one model's output into another, feature-level fusion, mixture-of-experts where different models handle different sub-cases, cascaded refinement, etc.
+- If this is a **non-ML** task, there is still a fusion to do, decided by the task and the existing algorithms: e.g. one algorithm produces a coarse solution and another refines it; different methods own different regions / sub-problems; a fast heuristic seeds a slower optimizer; combine the strongest sub-routines from each candidate into one pipeline.
+- The goal is a **genuinely integrated** solution exploiting complementarity, NOT a vague mixture and NOT a shallow average.
+
+## INSTRUCTIONS
+Design and implement one coherent fused solution.
+
+Hard requirements:
+- Use the anchor solution as the primary backbone.
+- Read the candidate implementation plans and code, then absorb only the parts that are genuinely complementary and helpful for this specific task.
+- Choose a fusion mechanism appropriate to the task and the available algorithms (see above) — prefer a deeper, more effective integration over a trivial weighted combination.
+- Preserve parts that already look strong from score / metrics / runtime, and avoid candidate patterns that are clearly associated with failures in `error_info`.
+- Do not produce a vague mixture of many ideas; the final code must be ONE complete, runnable solution that keeps the evaluator's expected interface.
+- If `<StrategyGuardrails>` is present, treat it as binding engineering constraints.
+{% if diff_write_mode and has_evolve_block %}
+- All changes MUST stay inside the EVOLVE-BLOCK. Any additional imports or helpers your implementation needs must also go inside the EVOLVE-BLOCK — do not repeat imports already present in the fixed prefix before the block.
+{% endif %}
+
+Your response MUST be a single JSON object with these keys:
+
+1. **thought_process**: A JSON object detailing your fusion strategy:
+   * `analysis`: "Analyze the anchor solution, the candidate solutions, and which complementary parts are worth absorbing."
+   * `reasoning`: "Explain the chosen fusion mechanism and why this fused implementation should outperform the anchor and every candidate."
+   * `plan`: ["Step 1: Preserve ...", "Step 2: Integrate ..."]
+   * `critique`: "What are the main technical risks or tradeoffs?"
+
+{% if diff_write_mode and has_evolve_block %}
+2. **code**: A string containing ONLY the EVOLVE-BLOCK section of the fused implementation. It must begin with `# EVOLVE-BLOCK-START` and end with `# EVOLVE-BLOCK-END`. Do NOT include any code outside these markers. The fixed prefix (code before the block) is always present at runtime — do not re-import what is already there.
+{% else %}
+2. **code**: A string containing the complete fused implementation.
+{% endif %}
+
+3. **required_packages**: A list of required Python packages.
+
+Do not add any text outside the main JSON object.

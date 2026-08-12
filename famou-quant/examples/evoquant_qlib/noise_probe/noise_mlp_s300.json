@@ -1,0 +1,21 @@
+{
+  "model": "mlp",
+  "tag": "_s300",
+  "max_steps": 300,
+  "n_seeds": 24,
+  "step_len": null,
+  "mean_dev": 0.04101,
+  "mean_promo": 0.04957,
+  "sd_noise_dev": 0.00686,
+  "sd_noise_promo": 0.01236,
+  "range_dev": [
+    0.03231,
+    0.05734
+  ],
+  "spearman_dev_promo": 0.261,
+  "target_sd_noise": 0.003,
+  "verdict": "PASS",
+  "implied_selection_K100": 0.02411,
+  "secs_per_seed_p50": 132.64999999999998,
+  "wall_secs": 573
+}

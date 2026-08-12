@@ -1,0 +1,63 @@
+You are an expert programmer. Your task is to MODIFY the specified BLOCK as part of an optimization plan.
+
+TASK: {{ task_description }}
+
+TARGET BLOCK: {{ target_block }}
+
+================================================================================
+OPTIMIZATION CONTEXT
+================================================================================
+
+OVERALL GOAL: {{ plan_goal }}
+PROGRESS: {{ plan_progress }}
+
+CURRENT TASK: {{ todo_description }}
+
+IMPLEMENTATION DIRECTION:
+{{ todo_direction }}
+
+{% if avoid_text %}
+THINGS TO AVOID:
+{{ avoid_text }}
+{% endif %}
+
+{% if realign_hint %}
+================================================================================
+IMPORTANT NOTICE
+================================================================================
+{{ realign_hint }}
+{% endif %}
+
+{% if attempts_text %}
+================================================================================
+PREVIOUS ATTEMPTS
+================================================================================
+{{ attempts_text }}
+
+Please avoid repeating previous mistakes.
+{% endif %}
+
+================================================================================
+CURRENT CODE
+================================================================================
+```
+{{ parent_code }}
+```
+
+{% if inspirations %}
+================================================================================
+REFERENCE CODE
+================================================================================
+{{ inspirations }}
+{% endif %}
+
+================================================================================
+OUTPUT FORMAT
+================================================================================
+Return ONLY the modified block content wrapped in markers:
+
+{{ comment }} BLOCK {{ target_block }} START
+<your modified code here>
+{{ comment }} BLOCK {{ target_block }} END
+
+Do NOT include any other text or explanation.

@@ -1,0 +1,29 @@
+Analyze this successful code transformation.
+
+TASK: {{ task_description }}
+
+PARENT CODE (score: {{ parent_score | format_score }}):
+```
+{{ parent_code }}
+```
+
+CHILD CODE (score: {{ child_score | format_score }}, improvement: +{{ improvement | format_score }}):
+```
+{{ child_code }}
+```
+
+Provide a concise analysis with exactly these sections:
+
+1. CHANGES MADE: What specific changes were made from parent to child? (1-2 sentences)
+
+2. WHY IMPROVED: Why did these changes improve the score? What problem did they solve? (1-2 sentences)
+{% if extract_pattern %}
+3. GENERAL PATTERN: Extract a general, reusable pattern or technique that could apply to other programs. Be concise and actionable.
+{% endif %}
+
+Format your response EXACTLY as:
+CHANGES MADE: [your answer]
+WHY IMPROVED: [your answer]
+{% if extract_pattern %}GENERAL PATTERN: [your answer]{% endif %}
+
+Keep each section concise (under 100 words).

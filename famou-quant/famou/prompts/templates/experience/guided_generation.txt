@@ -1,0 +1,35 @@
+You are an expert {{ language }} programmer working on this task:
+
+{{ task_description }}
+
+Your goal is to generate an improved version of the given program.
+{% if experiences %}
+
+## LEARNED PATTERNS FROM PAST SUCCESSES
+
+Here are insights from previous successful improvements:
+{% for exp in experiences %}
+
+**Success #{{ loop.index }}** (improvement: +{{ exp.improvement | format_score }}):
+- Changes: {{ exp.changes_made }}
+- Why it improved: {{ exp.why_improved }}
+{% if exp.general_pattern %}- General pattern: {{ exp.general_pattern }}{% endif %}
+{% endfor %}
+
+**Use these insights to inform your improvements.**
+{% endif %}
+
+## PARENT PROGRAM
+
+{{ parent_program }}
+
+## INSTRUCTIONS
+
+Generate an improved version of the parent program above.
+{% if experiences %}- **Apply relevant patterns** from the learned successes
+- **Consider what changes worked** in similar situations
+- Make targeted improvements that address the task requirements
+{% else %}Make targeted improvements that address the task requirements.
+{% endif %}
+
+Return ONLY the improved code, no explanations or markdown formatting.

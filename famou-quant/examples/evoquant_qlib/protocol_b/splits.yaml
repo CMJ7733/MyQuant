@@ -1,0 +1,76 @@
+# Protocol B — Reliable Evolution Protocol 四段切分（冻结版 v1）
+#
+# 冻结日期: 2026-08-03（冻结 commit hash 见 ../README.md 状态清单）
+# 冻结纪律: 本文件一经 commit, 日期与规则不得因任何实验结果而修改.
+#   若因实现错误必须修改, 须递增 version、保留旧版文件, 并在论文中披露变更与原因.
+# 设计依据: workspace/project/docs/iclr2027_evoquant_plan_review.md §5-R1/R2、§7-W1.
+
+meta:
+  version: 1
+  frozen_on: "2026-08-03"
+  data_snapshot: "qlib 社区 cn_data, calendar 1999-11-10 ~ 2020-09-25, 详见 ../data_provenance.txt"
+  qlib_commit: "79633dd9506ea689e5400dea0197717b5b3d74b7"
+  market: csi300
+  benchmark: SH000300
+
+label:
+  expression: "Ref($close, -2) / Ref($close, -1) - 1"   # Alpha158 默认标签, 全体方法共用
+  norm: CSZScoreNorm                                    # 逐日截面 z-score, 无时间混合
+  forward_depth_days: 2   # 标签引用 t+1、t+2 收盘 → 最大前视 2 个交易日
+
+embargo:
+  rule: "embargo = label.forward_depth_days（推导值, 非自由参数; 标签变更须重新推导）"
+  days: 2
+  implementation: >-
+    尾部修剪(purging): 每段的样本区间在段末截去 embargo.days 个交易日,
+    使任一样本的标签窗口不越过本段日历边界. 四段统一适用:
+    train 尾修剪保护 visible_dev 不被训练标签引用;
+    visible_dev 尾修剪防止 agent 可见反馈引用 sealed 段价格;
+    sealed_promotion 尾修剪防止 gate 证据触及 final_test;
+    final_test 尾修剪保持规则一致(E5 受数据末端自然截断).
+    特征回看跨段(段首样本使用前段历史价格)属向后引用, 不是泄漏, 段首不修剪.
+
+preprocessing:
+  rule: >-
+    一切预处理统计量(归一化、缺失填充等)仅在本 episode 的 train 段拟合,
+    即 fit_start_time/fit_end_time 恒等于 train 段起止.
+
+access_policy:
+  train: "候选代码自由使用"
+  visible_dev: "agent 可反复评估; 反馈经受限化(取整/粗粒度)后返回, 由 visible evaluator 实施"
+  sealed_promotion: "仅 sealed evaluator 进程可读; 对外只返回离散 verdict; 逐日序列不出该进程"
+  final_test: "方法与搜索全部冻结前, 任何进程不得读取; 每个评估 episode 的 final_test 仅评估一次"
+
+# 段长: train 6y / visible_dev 1y / sealed_promotion 1y / final_test 1y, 滚动步长 1y.
+# dev 取 1 年是设计决定(短窗放大 adaptive overfitting 现象, 见评审文档 R2), 冻结后不因结果调整.
+episodes:
+  E1:
+    role: development   # 系统开发调试专用, final_test 可被反复查看 → 作废, 永不进论文主结果
+    train:            ["2008-01-01", "2013-12-31"]
+    visible_dev:      ["2014-01-01", "2014-12-31"]
+    sealed_promotion: ["2015-01-01", "2015-12-31"]
+    final_test:       ["2016-01-01", "2016-12-31"]
+  E2:
+    role: evaluation
+    train:            ["2009-01-01", "2014-12-31"]
+    visible_dev:      ["2015-01-01", "2015-12-31"]   # 含 2015 股灾
+    sealed_promotion: ["2016-01-01", "2016-12-31"]
+    final_test:       ["2017-01-01", "2017-12-31"]
+  E3:
+    role: evaluation
+    train:            ["2010-01-01", "2015-12-31"]
+    visible_dev:      ["2016-01-01", "2016-12-31"]
+    sealed_promotion: ["2017-01-01", "2017-12-31"]
+    final_test:       ["2018-01-01", "2018-12-31"]   # 含 2018 熊市
+  E4:
+    role: evaluation
+    train:            ["2011-01-01", "2016-12-31"]
+    visible_dev:      ["2017-01-01", "2017-12-31"]
+    sealed_promotion: ["2018-01-01", "2018-12-31"]
+    final_test:       ["2019-01-01", "2019-12-31"]
+  E5:
+    role: evaluation
+    train:            ["2012-01-01", "2017-12-31"]
+    visible_dev:      ["2018-01-01", "2018-12-31"]
+    sealed_promotion: ["2019-01-01", "2019-12-31"]
+    final_test:       ["2020-01-01", "2020-09-25"]   # 数据快照末端截断(~180 交易日, 含疫情段), 论文披露

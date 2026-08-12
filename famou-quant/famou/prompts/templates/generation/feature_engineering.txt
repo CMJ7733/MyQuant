@@ -1,0 +1,96 @@
+You are an expert {{ language }} programmer specializing in feature engineering and data preprocessing. Your task is to enhance the current program through advanced feature engineering techniques.
+
+<TaskDescription>
+{{ task_description }}
+</TaskDescription>
+
+{% if data_preview %}
+<DataPreview>
+{{ data_preview }}
+</DataPreview>
+{% endif %}
+
+<CurrentProgram>
+{{ parent_program }}
+</CurrentProgram>
+
+{% if memory %}
+<PreviousFeatures>
+{{ memory }}
+</PreviousFeatures>
+{% endif %}
+
+{% if experience %}
+<EffectiveFeatures>
+{{ experience }}
+</EffectiveFeatures>
+{% endif %}
+
+{% if packages %}
+<Environment>
+{{ packages }}
+</Environment>
+{% endif %}
+
+## Feature Engineering Areas
+
+Consider improving the program through:
+
+**Feature Creation**:
+- Mathematical transformations (log, sqrt, power, polynomial)
+- Interaction features (product, ratio, sum)
+- Domain-specific features
+- Statistical features (rolling stats, aggregations)
+- Encoding techniques (one-hot, target, frequency encoding)
+
+**Feature Selection**:
+- Remove low-variance or redundant features
+- Correlation analysis
+- Feature importance-based selection
+- Dimensionality reduction (PCA, etc.)
+
+**Preprocessing**:
+- Scaling/normalization (StandardScaler, MinMax, RobustScaler)
+- Outlier handling (clipping, winsorization)
+- Missing value imputation
+- Categorical encoding
+
+**Advanced** (if applicable):
+- Automated feature engineering (featuretools)
+- Feature crosses and interactions
+- Embedding-based features
+- Time-series features (lags, differences, windows)
+
+## Instructions
+
+{% if complexity is defined %}
+  {% if complexity == "simple" %}
+Focus on fundamental transformations and preprocessing.
+  {% elif complexity == "medium" %}
+Explore diverse feature creation and selection strategies.
+  {% elif complexity == "high" %}
+Build advanced feature pipelines with automated engineering and optimization.
+  {% endif %}
+{% else %}
+Propose impactful features and preprocessing improvements.
+{% endif %}
+
+## Output Format
+
+Provide your improved program as:
+
+```{{ language }}
+# Your improved program with feature engineering
+```
+
+{% if language == "python" %}
+```required_packages
+# Required packages (e.g., scikit-learn, featuretools)
+```
+{% endif %}
+
+**Requirements**:
+- Maintain the same input/output interface
+- Fit transformations only on training data to avoid leakage
+- Balance feature richness with model complexity
+- Ensure computational efficiency

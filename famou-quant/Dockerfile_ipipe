@@ -1,0 +1,46 @@
+FROM iregistry.baidu-int.com/famou/fm-sanbox-base:v0.4
+
+# 配置 pip 全局镜像源，运行时任务中 pip install 自动使用
+RUN mkdir -p /etc/pip.conf.d && \
+    printf "[global]\n\
+index-url = http://mirrors.baidubce.com/pypi/simple\n\
+extra-index-url = https://pypi.mirrors.ustc.edu.cn/simple\n\
+trusted-host = mirrors.baidubce.com pypi.mirrors.ustc.edu.cn\n" > /etc/pip.conf && \
+    mkdir -p ~/.pip && cp /etc/pip.conf ~/.pip/pip.conf
+
+# Install mlebench (OpenAI MLE-Bench) with Git-LFS support
+RUN apt-get update && apt-get install -y git-lfs && rm -rf /var/lib/apt/lists/* && \
+    git lfs install
+
+RUN http_proxy=http://mt:mtstudio@10.8.17.48:8777 \
+    https_proxy=http://mt:mtstudio@10.8.17.48:8777 \
+    git clone https://github.com/openai/mle-bench.git /opt/mle-bench && \
+    cd /opt/mle-bench && \
+    http_proxy=http://mt:mtstudio@10.8.17.48:8777 \
+    https_proxy=http://mt:mtstudio@10.8.17.48:8777 \
+    git lfs fetch --all && \
+    git lfs pull && \
+    pip install --index-url https://pip.baidu-int.com/simple/ --trusted-host pip.baidu.com -e .
+
+COPY fm-agent /data/baidu/acg/fm-agent
+WORKDIR /data/baidu/acg/fm-agent/
+
+# 复制入口脚本
+COPY entrypoint_fm.sh /entrypoint.sh
+
+COPY requirements.txt requirements.txt
+COPY pyproject.toml pyproject.toml
+COPY README.md README.md
+RUN python -m pip install -r requirements.txt
+
+# 安装安全扫描工具
+RUN cd /data/baidu/acg/fm-agent/famou/modules/evaluate && tar -zxvf security_rules.tar.gz 
+
+# 赋予执行权限（推荐）
+RUN chmod +x /entrypoint.sh
+
+# （可选）如果被替换的文件是配置文件，你可能需要重启服务
+# 这取决于基础镜像的 CMD 或 ENTRYPOINT
+# 例如： CMD ["nginx", "-g", "daemon off;"] 
+# (这一行通常不需要修改，保留基础镜像的默认命令即可)
+ENTRYPOINT ["/bin/bash","/entrypoint.sh"]

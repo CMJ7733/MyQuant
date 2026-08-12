@@ -1,0 +1,12 @@
+qlib cn_data snapshot provenance
+================================
+download_date: 2026-08-03
+source: https://github.com/SunsetWolf/qlib_dataset/releases/download/v0/qlib_data_cn_1d_latest.zip
+  (经 ghfast.top 镜像加速下载, 内容与直连同一 release asset)
+sha_note: zip 大小 196,549,189 bytes; 解压后 334MB, 31008 entries
+calendar_range: 1999-11-10 ~ 2020-09-25
+markets: all / csi100 / csi300 / csi500
+target_dir: /root/.qlib/qlib_data/cn_data
+备注: 快照止于 2020-09-25, 与 qlib 官方 benchmark 协议(test 至 2020-08-01)兼容;
+  论文全部滚动 episode 须落在 2008-01-01 ~ 2020-09-25 之内.
+  此快照一经冻结不再更新; 如需更长区间(社区 investment_data 源), 须另行评估并重新冻结.

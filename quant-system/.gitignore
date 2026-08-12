@@ -1,0 +1,27 @@
+# --- secrets: never tracked -------------------------------------------------
+# The real endpoint config lives in configs/llm.yaml; only the .example is tracked.
+configs/llm.yaml
+configs/llm.local.yaml
+*key_set*.yaml
+*.key
+.env
+.env.*
+
+# --- run output -------------------------------------------------------------
+# A single run writes prompts, completions, every alpha and its metrics. Large,
+# regenerable, and llm_calls.jsonl echoes whatever the endpoint returned.
+runs/
+scripts/calibration_*.json
+
+# --- python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+venv/
+.venv/

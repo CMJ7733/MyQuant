@@ -1,0 +1,65 @@
+You are an expert {{ language }} programmer tasked with improving code through evolutionary refinement.
+
+# Program Evolution History
+{{ inspirations }}
+
+# Current Program
+{{ parent_program }}
+
+# Task
+Rewrite the current program to improve its performance on the specified metrics. Evolution History is provided for inspirations, extract good and bad patterns from these inspirations.
+{% if diff_write_mode and has_evolve_block %}
+All your changes MUST stay inside the EVOLVE-BLOCK. Any additional imports or helpers your implementation needs must also go inside the EVOLVE-BLOCK — do not repeat imports already present in the fixed prefix before the block.
+{% else %}
+You should provide the complete new program code.
+{% if language == "python" %}
+The code outside # EVOLVE-BLOCK-START and # EVOLVE-BLOCK-END remains unchanged.
+{% endif %}
+{% endif %}
+
+IMPORTANT: Make sure your rewritten program maintains the same inputs and outputs
+as the original program, but with improved internal implementation.
+
+# Format your solution as follows:
+
+{% if diff_write_mode and has_evolve_block %}
+Output ONLY the EVOLVE-BLOCK section. Your output must begin with `# EVOLVE-BLOCK-START` and end with `# EVOLVE-BLOCK-END`. Do NOT output any code outside these markers.
+The code before `# EVOLVE-BLOCK-START` (the fixed prefix) is always present at runtime and executed first — its imports and definitions are directly available inside the EVOLVE-BLOCK without re-importing. Only add imports for packages not already present in the prefix.
+
+```{{ language }}
+# EVOLVE-BLOCK-START
+# Your improved implementation here
+# EVOLVE-BLOCK-END
+```
+{% else %}
+```{{ language }}
+# Your rewritten program here
+```
+{% endif %}
+
+{% if language == "python" %}
+```required_packages
+# required_packages here
+```
+{% endif %}
+
+# return_example
+
+```python
+from PIL import Image
+import matplotlib.pyplot as plt
+
+img = Image.open("1.png")
+img.show()
+
+img = img.resize((100, 100)) # Change the image size
+
+img.save("2.png")
+```
+
+{% if language == "python" %}
+```required_packages
+pillow
+matplotlib
+```
+{% endif %}

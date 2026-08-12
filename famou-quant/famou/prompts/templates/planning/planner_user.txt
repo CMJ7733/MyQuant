@@ -1,0 +1,31 @@
+Task: {{ task_description }}
+
+Available blocks: {{ arms }}
+Allowed ops: {{ allowed_ops }}
+
+Current state:
+- Parent: {{ parent_id }} (score={{ parent_score }})
+- Best score in population: {{ best_score }}
+- Iteration: {{ iteration }}
+
+Parent code (full):
+```
+{{ parent_code }}
+```
+
+Block performance stats:
+{{ block_stats }}
+
+Parent modification history (previous attempts on this parent):
+{{ parent_track }}
+
+Pending actions (last {{ history_size }}, not completed): {{ pending_targets }}
+Pending counts (last {{ history_size }}): {{ pending_counts }}
+
+Completed targets (last {{ history_size }}, for reference only): {{ recent_targets }}
+Completed counts (last {{ history_size }}): {{ counts }}
+
+Recent history:
+{{ history }}
+
+Return ONLY JSON.

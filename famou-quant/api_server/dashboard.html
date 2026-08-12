@@ -1,0 +1,2058 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>演化算法分析仪表板</title>
+        <style>
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+
+                font-size: 13px;
+            }
+
+            :root {
+                --border-color: #32363c;
+
+                --bg-primary: #111112;
+                --bg-secondary: #1a1b1d;
+                --bg-tertiary: #222426;
+                --bg-card: #282a2f;
+                --text-primary: #ffffff;
+                --text-secondary: #ebebeb;
+                --text-muted: #666666;
+                --accent-blue: #5d54ff;
+                --accent-green: #13b985;
+                --accent-orange: #ff7e0d;
+                --accent-red: #dc2626;
+                --accent-purple: #6366f1;
+                --hover-bg: #34383f;
+            }
+
+            body {
+                overflow-x: hidden;
+
+                color: var(--text-primary);
+                background: var(--bg-primary);
+
+                font-family:
+                    'PingFang SC',
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    'Segoe UI',
+                    'Hiragino Sans GB',
+                    'Microsoft YaHei',
+                    sans-serif;
+                font-size: 13px;
+                line-height: 1.6;
+            }
+            mjx-dtable > * {
+                font-size: inherit !important;
+                line-height: inherit !important;
+            }
+            .dashboard {
+                min-height: 100vh;
+            }
+
+            /* 顶部导航 */
+            .header {
+                position: sticky;
+                z-index: 100;
+                top: 0;
+
+                border-bottom: 1px solid var(--border-color);
+                background: var(--bg-secondary);
+
+                backdrop-filter: blur(10px);
+            }
+
+            .header-content {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 1rem 2rem;
+            }
+
+            .logo {
+                color: var(--text-primary);
+                background: linear-gradient(135deg, #4a3dff, #3730cc);
+                -webkit-background-clip: text;
+                background-clip: text;
+
+                font-size: 1.5rem;
+                font-weight: 700;
+
+                -webkit-text-fill-color: transparent;
+            }
+
+            .nav {
+                display: flex;
+
+                gap: 0.5rem;
+            }
+
+            .nav-btn {
+                padding: 0.5rem 1rem;
+
+                cursor: pointer;
+                transition: all 0.2s;
+
+                color: var(--text-secondary);
+                border: 1px solid transparent;
+                border-radius: 6px;
+                background: transparent;
+
+                font-size: 0.875rem;
+            }
+
+            .nav-btn:hover {
+                color: var(--text-primary);
+                background: var(--hover-bg);
+            }
+
+            .nav-btn.active {
+                color: var(--text-primary);
+                border-color: var(--border-color);
+                background: var(--bg-tertiary);
+            }
+
+            /* 主内容区 */
+            .main-content {
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 2rem;
+            }
+
+            .report-header,
+            .report-footer {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 1rem 2rem;
+
+                letter-spacing: 0.12em;
+
+                color: var(--text-primary);
+
+                font-size: 18px;
+                font-weight: 600;
+            }
+
+            .report-header {
+                margin-bottom: 1rem;
+
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .report-footer {
+                margin-top: 2rem;
+
+                border-top: 1px solid var(--border-color);
+            }
+
+            .section {
+                margin-bottom: 3rem;
+            }
+
+            .section-header {
+                margin-bottom: 2rem;
+            }
+
+            .section-header h2 {
+                margin-bottom: 0.5rem;
+
+                font-size: 16px;
+                font-weight: 500;
+            }
+
+            .section-desc {
+                color: var(--text-secondary);
+
+                font-size: 0.95rem;
+            }
+
+            .meta-info {
+                display: flex;
+                align-items: center;
+
+                margin-top: 0.75rem;
+
+                gap: 1rem;
+            }
+
+            .badge {
+                padding: 0.25rem 0.75rem;
+
+                color: var(--text-secondary);
+                border: 1px solid var(--border-color);
+                border-radius: 4px;
+                background: var(--bg-tertiary);
+
+                font-size: 0.875rem;
+            }
+
+            .score {
+                color: var(--text-secondary);
+
+                /* font-size: 0.95rem; */
+            }
+
+            .score strong {
+                color: var(--accent-green);
+
+                font-size: 1.1rem;
+            }
+
+            /* 卡片样式 */
+            .card {
+                margin-bottom: 1.5rem;
+                padding: 1.5rem;
+
+                transition: all 0.3s ease;
+
+                border: 1px solid var(--border-color);
+                border-radius: 12px;
+                background: var(--bg-secondary);
+                box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+            }
+
+            /* .card:hover {
+                                                                                                                            border-color: rgba(37, 99, 235, 0.35);
+                                                                                                                            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+                                                                                                                        } */
+
+            .card-title {
+                margin-bottom: 1rem;
+
+                color: var(--text-primary);
+
+                font-size: 15px;
+                font-weight: 500;
+            }
+
+            .card-desc {
+                margin-bottom: 1rem;
+
+                color: var(--text-secondary);
+
+                font-size: 14px;
+            }
+
+            .strategy-text {
+                color: var(--text-secondary);
+
+                line-height: 1.8;
+            }
+
+            /* 代码讲解容器 */
+            .code-explanation-container {
+                display: grid;
+
+                margin-bottom: 1.5rem;
+
+                grid-template-columns: 1fr 1fr;
+                gap: 1.5rem;
+            }
+
+            .code-panel,
+            .explanation-panel {
+                overflow: hidden;
+
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                background: var(--bg-tertiary);
+            }
+
+            .panel-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+
+                padding: 1rem 1.5rem;
+
+                border-bottom: 1px solid var(--border-color);
+                background: var(--bg-tertiary);
+            }
+
+            .panel-header h4 {
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            .language-tag {
+                padding: 0.25rem 0.5rem;
+
+                color: var(--text-secondary);
+                border-radius: 4px;
+                background: var(--bg-secondary);
+
+                font-size: 0.75rem;
+            }
+
+            .code-content {
+                /* overflow-x: auto; */
+                overflow-y: auto;
+
+                max-height: 600px;
+                padding: 1.5rem;
+            }
+            .code-content pre {
+                margin: 0;
+            }
+
+            .code-content code {
+                color: var(--text-secondary);
+
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+                font-size: 0.875rem;
+                line-height: 1.8;
+            }
+
+            .line {
+                display: block;
+
+                padding: 0.125rem 0;
+
+                transition: all 0.2s;
+            }
+
+            .line:hover {
+                color: var(--text-primary);
+                background: var(--hover-bg);
+            }
+
+            .line.highlighted {
+                padding-left: 0.5rem;
+
+                color: var(--text-primary);
+                border-left: 3px solid var(--accent-blue);
+                background: rgba(74, 61, 255, 0.1);
+            }
+
+            .explanation-content {
+                overflow-y: auto;
+
+                max-height: 600px;
+                padding: 1.5rem;
+            }
+
+            .explanation-item {
+                margin-bottom: 1.5rem;
+                padding: 1rem;
+
+                transition: all 0.2s;
+
+                border-left: 3px solid transparent;
+                border-radius: 6px;
+                background: var(--bg-tertiary);
+            }
+
+            .explanation-item:hover {
+                border-left-color: #4a3dff;
+                background: var(--hover-bg);
+            }
+
+            .explanation-item.active {
+                border-left-color: #4a3dff;
+                background: rgba(74, 61, 255, 0.05);
+            }
+
+            .line-ref {
+                margin-bottom: 0.5rem;
+
+                color: #4a3dff;
+
+                font-size: 0.75rem;
+                font-weight: 600;
+            }
+
+            .explanation-item p {
+                color: var(--text-secondary);
+
+                font-size: 0.9rem;
+                line-height: 1.6;
+            }
+
+            /* 性能指标 */
+            .performance-section {
+                margin-top: 2rem;
+                margin-bottom: 1.5rem;
+            }
+
+            .section-subtitle {
+                margin-bottom: 1.5rem;
+                /* background: linear-gradient(135deg, #4a3dff, #3730cc); */
+                /* -webkit-background-clip: text; */
+                /* background-clip: text; */
+
+                color: var(--text-primary);
+
+                font-size: 15px;
+                font-weight: 600;
+
+                /* -webkit-text-fill-color: transparent; */
+            }
+
+            .metrics-grid {
+                display: grid;
+
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 1.5rem;
+            }
+
+            .metric-card {
+                padding: 1.5rem;
+
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                background: var(--bg-card);
+            }
+
+            .metric-label {
+                margin-bottom: 0.5rem;
+
+                color: var(--text-secondary);
+
+                font-size: 0.875rem;
+            }
+
+            .metric-value {
+                margin-bottom: 0.5rem;
+
+                color: var(--text-primary);
+
+                font-size: 2rem;
+                font-weight: 700;
+            }
+
+            .metric-value.positive {
+                color: var(--accent-green);
+            }
+
+            .metric-detail {
+                color: var(--text-muted);
+
+                font-size: 0.875rem;
+            }
+
+            .metric-chart {
+                margin-top: 1rem;
+            }
+
+            .bar-chart {
+                display: flex;
+                align-items: flex-end;
+
+                height: 100px;
+
+                gap: 1rem;
+            }
+
+            .bar {
+                position: relative;
+
+                display: flex;
+                align-items: flex-end;
+                flex: 1;
+                justify-content: center;
+
+                padding-bottom: 0.5rem;
+
+                border-radius: 4px 4px 0 0;
+                background: var(--bg-tertiary);
+            }
+
+            .bar.baseline {
+                background: #333;
+            }
+
+            .bar.current {
+                background: var(--accent-green);
+            }
+
+            .bar-label {
+                color: var(--text-primary);
+
+                font-size: 0.75rem;
+            }
+
+            /* 聚类分析 */
+            .cluster-chart-container {
+                position: relative;
+
+                height: 500px;
+            }
+
+            .legend-item {
+                display: flex;
+                align-items: center;
+
+                color: var(--text-secondary);
+
+                font-size: 0.875rem;
+
+                gap: 0.5rem;
+            }
+
+            .legend-color {
+                width: 12px;
+                height: 12px;
+
+                border-radius: 50%;
+            }
+
+            /* 图表容器 */
+            .chart-container {
+                position: relative;
+
+                height: 400px;
+                padding: 1rem;
+
+                border-radius: 8px;
+                background: var(--bg-secondary);
+            }
+
+            .chart-container .chart {
+                width: 100%;
+                height: 100%;
+            }
+
+            #evolutionChart,
+            #diversityChart,
+            #performanceDistChart,
+            #bestScoreChart,
+            #topPathChart {
+                width: 100%;
+                height: 100%;
+            }
+
+            /* 代码差异描述 */
+            .diff-description {
+                color: var(--text-secondary);
+
+                line-height: 1.8;
+            }
+
+            .diff-description p {
+                margin-bottom: 1rem;
+            }
+
+            .diff-list {
+                margin-top: 1rem;
+                padding: 0;
+
+                list-style: none;
+            }
+
+            .diff-list li {
+                margin-bottom: 0.75rem;
+                padding: 1rem;
+
+                border-left: 3px solid var(--accent-blue);
+                border-radius: 4px;
+                background: var(--bg-tertiary);
+
+                line-height: 1.7;
+            }
+
+            .diff-list li strong {
+                display: block;
+
+                margin-bottom: 0.5rem;
+
+                color: #4a3dff;
+            }
+
+            /* 程序分析列表 */
+            .program-analysis-list {
+                display: flex;
+                flex-direction: column;
+
+                gap: 1.5rem;
+            }
+
+            .program-item {
+                padding: 1.5rem;
+
+                transition: all 0.2s;
+
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                background: var(--bg-tertiary);
+            }
+
+            .program-item:hover {
+                transform: translateX(4px);
+
+                border-color: #4a3dff;
+            }
+
+            .program-header {
+                display: flex;
+                align-items: center;
+                flex-wrap: wrap;
+
+                margin-bottom: 1rem;
+
+                gap: 1rem;
+            }
+
+            .program-id {
+                color: var(--text-primary);
+
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+
+            .program-score {
+                color: var(--text-secondary);
+
+                font-size: 0.95rem;
+            }
+
+            .program-score strong {
+                color: var(--accent-green);
+
+                font-size: 1.05rem;
+            }
+
+            .cluster-badge {
+                padding: 0.25rem 0.75rem;
+
+                border-radius: 4px;
+
+                font-size: 0.8rem;
+                font-weight: 500;
+            }
+
+            .program-analysis {
+                color: var(--text-secondary);
+
+                font-size: 0.95rem;
+                line-height: 1.7;
+            }
+
+            .program-analysis p {
+                margin: 0;
+            }
+
+            .program-analysis strong {
+                color: var(--text-primary);
+            }
+
+            /* 表格容器 */
+            .tables-container {
+                display: grid;
+
+                margin-top: 1.5rem;
+
+                grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+                gap: 2rem;
+            }
+
+            .table-subtitle {
+                margin-bottom: 1rem;
+
+                color: var(--text-primary);
+
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            .info-table {
+                overflow: hidden;
+
+                width: 100%;
+
+                border-collapse: collapse;
+                border-radius: 8px;
+                background: var(--bg-tertiary);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+
+            .info-table tbody tr {
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .info-table tbody tr:last-child {
+                border-bottom: none;
+            }
+
+            .info-table td {
+                padding: 1rem;
+            }
+
+            .table-label {
+                width: 60%;
+
+                color: var(--text-secondary);
+
+                font-size: 13px;
+            }
+
+            .table-value {
+                text-align: right;
+
+                color: var(--text-primary);
+
+                font-size: 13px;
+                font-weight: 500;
+            }
+
+            .highlight-value {
+                color: var(--accent-green);
+
+                font-size: 13px;
+            }
+
+            /* 文本框样式 */
+            .text-box {
+                padding: 1.5rem;
+
+                color: var(--text-secondary);
+                /* border-left: 4px solid var(--accent-blue); */
+                border-radius: 8px;
+                background: var(--bg-tertiary);
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+
+                line-height: 1.8;
+            }
+
+            .text-box p {
+                margin-bottom: 1rem;
+            }
+
+            .text-box p:last-child {
+                margin-bottom: 0;
+            }
+
+            .text-box strong {
+                color: var(--text-primary);
+            }
+
+            .requirement-list {
+                margin: 1rem 0;
+                padding: 0;
+
+                list-style: none;
+            }
+
+            .requirement-list li {
+                position: relative;
+
+                padding: 0.75rem 0;
+                padding-left: 1.5rem;
+
+                line-height: 1.7;
+            }
+
+            /* .requirement-list li::before {
+                                                                                                                            position: absolute;
+                                                                                                                            left: 0;
+
+                                                                                                                            content: '▸';
+
+                                                                                                                            color: #4a3dff;
+
+                                                                                                                            font-weight: bold;
+                                                                                                                        } */
+
+            /* 性能分析网格调整 */
+            .performance-grid {
+                display: grid;
+
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+
+            .metric-card-large {
+                padding: 1.5rem;
+
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                background: var(--bg-secondary);
+            }
+
+            .performance-text-box {
+                padding: 1.5rem;
+
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                background: var(--bg-secondary);
+
+                font-size: 13px;
+            }
+
+            .performance-text-box h4 {
+                margin-bottom: 1rem;
+
+                color: var(--text-primary);
+
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            .performance-text-box p {
+                margin-bottom: 1rem;
+
+                color: var(--text-secondary);
+
+                font-size: 13px;
+                line-height: 1.7;
+            }
+
+            .performance-text-box p:last-child {
+                margin-bottom: 0;
+            }
+
+            .card-subtitle {
+                margin-bottom: 1rem;
+                padding-bottom: 0.5rem;
+
+                color: var(--text-primary);
+                border-bottom: 2px solid var(--border-color);
+
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            .summary-card {
+                margin-top: 1.5rem;
+                padding: 2rem;
+
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                background: linear-gradient(
+                    135deg,
+                    rgba(74, 61, 255, 0.05),
+                    rgba(16, 185, 129, 0.05)
+                );
+            }
+
+            .summary-card h3 {
+                margin-bottom: 1rem;
+
+                font-size: 1.5rem;
+                font-weight: 600;
+            }
+
+            .summary-card p {
+                color: var(--text-secondary);
+
+                font-size: 1rem;
+                line-height: 1.8;
+            }
+
+            /* 响应式调整 */
+            @media (max-width: 1200px) {
+                .tables-container {
+                    grid-template-columns: 1fr;
+                }
+                .code-explanation-container {
+                    grid-template-columns: 1fr;
+                }
+
+                .performance-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            @media (max-width: 768px) {
+                .header-content {
+                    flex-direction: column;
+
+                    gap: 1rem;
+                }
+
+                .nav {
+                    overflow-x: auto;
+
+                    width: 100%;
+                }
+
+                .main-content {
+                    padding: 1rem;
+                }
+
+                .code-explanation-container {
+                    grid-template-columns: 1fr;
+                }
+            }
+
+            /* 滚动条样式 */
+            ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+
+            ::-webkit-scrollbar-track {
+                background: var(--bg-secondary);
+            }
+
+            ::-webkit-scrollbar-thumb {
+                border-radius: 4px;
+                background: var(--border-color);
+            }
+
+            ::-webkit-scrollbar-thumb:hover {
+                background: var(--text-muted);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="dashboard">
+            <div class="report-header">算法优化任务报告</div>
+            <main class="main-content">
+                <!-- 背景与目标 section -->
+                <section id="background" class="section active">
+                    <div class="section-header">
+                        <h2>背景与目标</h2>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="card-title">执行结果与执行参数设定</h3>
+
+                        <div class="tables-container">
+                            <div class="result-table-wrapper">
+                                <h4 class="table-subtitle">执行结果</h4>
+                                <table class="info-table">
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+
+                            <div class="param-table-wrapper">
+                                <h4 class="table-subtitle">参数设定</h4>
+                                <table class="info-table">
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="card-title">用户需求分析</h3>
+                        <div class="text-box">
+                            <ul class="requirement-list"></ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 演进过程分析 section -->
+                <section id="evolution" class="section">
+                    <div class="section-header">
+                        <h2>演进过程分析</h2>
+                    </div>
+
+                    <!-- 最终top3演化路径图 -->
+                    <div class="evolution-path-section">
+                        <!-- <h3 class="section-subtitle">演化过程图谱</h3> -->
+
+                        <div class="card">
+                            <h4 class="card-subtitle">
+                                最优解综合评分突破一览
+                            </h4>
+                            <p class="card-desc">洞察演进过程中最优解的更新</p>
+                            <div class="chart-container" style="height: 420px">
+                                <div id="bestScoreChart" class="chart"></div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h4 class="card-subtitle">最优解演化路径</h4>
+                            <p class="card-desc">
+                                洞察最优解的演化路径溯源及其关键改善
+                            </p>
+                            <div class="chart-container" style="height: 420px">
+                                <div id="topPathChart" class="chart"></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 最优解分析 section -->
+                <section id="best-solution" class="section">
+                    <div class="section-header">
+                        <h2>最优解分析</h2>
+                        <div class="meta-info">
+                            <span class="badge">Program </span>
+                            <span class="score"
+                                >综合得分: <strong></strong
+                            ></span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="card-title">策略思路</h3>
+                        <div class="text-box">
+                            <p id="strategyBox"></p>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="card-title">与初始解的代码核心差异</h3>
+                        <div class="text-box">
+                            <p id="codeDiffBox"></p>
+                        </div>
+                    </div>
+
+                    <!-- 优化指标提升分析 -->
+                    <div class="performance-section">
+                        <h3 class="section-subtitle">评估器指标提升</h3>
+                        <div class="performance-grid">
+                            <!-- <div class="metric-card-large">
+                                <div class="metric-label">
+                                    综合分数相比初始程序提升
+                                </div>
+                                <div class="metric-value positive"></div>
+                                <div class="metric-chart">
+                                    <div class="bar-chart">
+                                        <div
+                                            class="bar baseline"
+                                            style="height: 60%"
+                                        >
+                                            <span class="bar-label">初始</span>
+                                        </div>
+                                        <div
+                                            class="bar current"
+                                            style="height: 100%"
+                                        >
+                                            <span class="bar-label">当前</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div> -->
+                            <div class="performance-text-box">
+                                <h4>评估指标分析</h4>
+                                <div class="text-box">
+                                    <p></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 代码实现 -->
+                    <div class="card">
+                        <h3 class="card-title">代码实现</h3>
+                        <div class="code-explanation-container">
+                            <div class="code-panel">
+                                <div class="panel-header">
+                                    <h4>代码</h4>
+                                    <span class="language-tag">Python</span>
+                                </div>
+                                <div class="code-content" id="code-content">
+                                    <pre><code></code></pre>
+                                </div>
+                            </div>
+
+                            <div class="explanation-panel">
+                                <div class="panel-header">
+                                    <h4>逐行讲解</h4>
+                                </div>
+                                <div
+                                    class="explanation-content"
+                                    id="explanation-content"
+                                ></div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+            <footer class="report-footer">算法优化任务报告</footer>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+        <!-- 完整的JavaScript代码 -->
+        <script>
+            // ========== 全局工具函数 ==========
+            function clamp(value, min, max) {
+                return Math.min(Math.max(value, min), max)
+            }
+
+            function drawRoundedRect(ctx, x, y, width, height, radius) {
+                const r = Math.min(radius, width / 2, height / 2)
+                ctx.beginPath()
+                ctx.moveTo(x + r, y)
+                ctx.lineTo(x + width - r, y)
+                ctx.quadraticCurveTo(x + width, y, x + width, y + r)
+                ctx.lineTo(x + width, y + height - r)
+                ctx.quadraticCurveTo(
+                    x + width,
+                    y + height,
+                    x + width - r,
+                    y + height
+                )
+                ctx.lineTo(x + r, y + height)
+                ctx.quadraticCurveTo(x, y + height, x, y + height - r)
+                ctx.lineTo(x, y + r)
+                ctx.quadraticCurveTo(x, y, x + r, y)
+                ctx.closePath()
+            }
+
+            function drawCalloutBox(
+                ctx,
+                anchorX,
+                anchorY,
+                lines,
+                options = {}
+            ) {
+                const content = Array.isArray(lines) ? lines : [lines]
+                ctx.save()
+                ctx.font = options.font || '10px PingFang SC'
+                const paddingX = options.paddingX ?? 8
+                const paddingY = options.paddingY ?? 6
+                const lineHeight = options.lineHeight ?? 14
+                const textColor = options.textColor ?? '#1f2937'
+                const color = options.color ?? '#4A3DFF'
+                const background =
+                    options.background ?? 'rgba(255, 255, 255, 0.96)'
+                const align = options.align ?? 'top'
+                const borderWidth = options.borderWidth ?? 1.2
+                const bounds = options.bounds || {
+                    left: 0,
+                    right: ctx.canvas.width,
+                    top: 0,
+                    bottom: ctx.canvas.height,
+                }
+                const offset = options.offset ?? 24
+
+                const textWidths = content.map(
+                    (line) => ctx.measureText(line).width
+                )
+                const boxWidth = Math.max(...textWidths) + paddingX * 2
+                const boxHeight = lineHeight * content.length + paddingY * 2
+
+                let boxX
+                let boxY
+                if (align === 'right') {
+                    boxX = anchorX + offset
+                    boxY = anchorY - boxHeight / 2
+                } else if (align === 'left') {
+                    boxX = anchorX - boxWidth - offset
+                    boxY = anchorY - boxHeight / 2
+                } else if (align === 'bottom') {
+                    boxX = anchorX - boxWidth / 2
+                    boxY = anchorY + offset
+                } else {
+                    boxX = anchorX - boxWidth / 2
+                    boxY = anchorY - boxHeight - offset
+                }
+
+                boxX = clamp(boxX, bounds.left, bounds.right - boxWidth)
+                boxY = clamp(boxY, bounds.top, bounds.bottom - boxHeight)
+
+                const connectorTarget = (function () {
+                    if (options.connectorTarget) {
+                        return options.connectorTarget
+                    }
+                    if (align === 'right') {
+                        return { x: boxX, y: boxY + boxHeight / 2 }
+                    }
+                    if (align === 'left') {
+                        return {
+                            x: boxX + boxWidth,
+                            y: boxY + boxHeight / 2,
+                        }
+                    }
+                    if (align === 'bottom') {
+                        return { x: boxX + boxWidth / 2, y: boxY }
+                    }
+                    return { x: boxX + boxWidth / 2, y: boxY + boxHeight }
+                })()
+
+                ctx.lineWidth = borderWidth
+                ctx.strokeStyle = color
+                ctx.fillStyle = background
+                drawRoundedRect(ctx, boxX, boxY, boxWidth, boxHeight, 6)
+                ctx.fill()
+                ctx.stroke()
+
+                ctx.fillStyle = textColor
+                ctx.textBaseline = 'top'
+                content.forEach((line, index) => {
+                    ctx.fillText(
+                        line,
+                        boxX + paddingX,
+                        boxY + paddingY + index * lineHeight
+                    )
+                })
+
+                ctx.strokeStyle = color
+                ctx.fillStyle = color
+                ctx.lineWidth = borderWidth
+                ctx.beginPath()
+                ctx.moveTo(anchorX, anchorY)
+                ctx.lineTo(connectorTarget.x, connectorTarget.y)
+                ctx.stroke()
+
+                const arrowSize = 6
+                const angle = Math.atan2(
+                    connectorTarget.y - anchorY,
+                    connectorTarget.x - anchorX
+                )
+                ctx.beginPath()
+                ctx.moveTo(connectorTarget.x, connectorTarget.y)
+                ctx.lineTo(
+                    connectorTarget.x -
+                        arrowSize * Math.cos(angle - Math.PI / 6),
+                    connectorTarget.y -
+                        arrowSize * Math.sin(angle - Math.PI / 6)
+                )
+                ctx.lineTo(
+                    connectorTarget.x -
+                        arrowSize * Math.cos(angle + Math.PI / 6),
+                    connectorTarget.y -
+                        arrowSize * Math.sin(angle + Math.PI / 6)
+                )
+                ctx.closePath()
+                ctx.fill()
+
+                ctx.beginPath()
+                ctx.arc(anchorX, anchorY, 3, 0, Math.PI * 2)
+                ctx.fill()
+                ctx.restore()
+            }
+
+            // ========== 全局数据加载与填充 ==========
+            let globalData = null
+
+            async function loadAndFillData() {
+                try {
+                    const response = await fetch('./data-1.json')
+                    globalData = await response.json()
+
+                    // 填充静态内容
+                    fillBackgroundSection(globalData.background)
+                    fillBestSolutionSection(globalData.best_solution)
+                    fillCodeSection(globalData.code)
+                    MathJax.typeset()
+
+                    // 返回处理后的演化数据供图表使用
+                    return processEvolutionData(globalData)
+                } catch (err) {
+                    console.error('加载 data.json 失败:', err)
+                    return null
+                }
+            }
+
+            // 处理演化数据
+            function processEvolutionData(jsonData) {
+                const evolutionMap = jsonData.evolution_map || {}
+                const background = jsonData.background || {}
+                const execResults = background.execution_results || {}
+
+                // 转换 scatter_points
+                const scatterPoints = (evolutionMap.scatter_points || []).map(
+                    (point) => ({
+                        iteration: point[0],
+                        score: point[1],
+                        islandId: 1,
+                        programId: `P-${String(point[0]).padStart(4, '0')}`,
+                        status: point[1] > 0 ? 'pass' : 'fail',
+                    })
+                )
+
+                // 转换 best_scores 为阶梯线
+                const bestScores = []
+                const bestScoreLabels = []
+
+                if (
+                    evolutionMap.best_scores &&
+                    Array.isArray(evolutionMap.best_scores)
+                ) {
+                    evolutionMap.best_scores.forEach((item, index) => {
+                        const [iteration, score, label] = item
+
+                        bestScores.push({ iteration: iteration, score: score })
+
+                        if (label && label.trim()) {
+                            bestScoreLabels.push({
+                                iteration: iteration,
+                                score: score,
+                                text: label,
+                            })
+                        }
+                    })
+                }
+
+                // 构建 meta 信息
+                const maxIteration = execResults.total_iteration || 227
+                const allScores = (evolutionMap.scatter_points || [])
+                    .map((p) => p[1])
+                    .filter((s) => s > 0)
+                const maxScore =
+                    allScores.length > 0 ? Math.max(...allScores) : 1.0
+                const minScore =
+                    allScores.length > 0 ? Math.min(...allScores) : 0
+
+                const meta = {
+                    taskId: 'R2025-10-28-01',
+                    xAxis: {
+                        label: '演化轮次',
+                        min: 0,
+                        max: maxIteration,
+                    },
+                    yAxis: {
+                        label: '综合评分',
+                        min: Math.floor(minScore * 10) / 10,
+                        max: Math.ceil(maxScore * 10) / 10,
+                    },
+                }
+
+                // 处理 top1_path
+                const top3EvolutionPaths = []
+                if (
+                    evolutionMap.top1_path &&
+                    Array.isArray(evolutionMap.top1_path)
+                ) {
+                    top3EvolutionPaths.push({
+                        solutionId: '#0001',
+                        pathTitle: '最优解演化路径溯源节点程序',
+                        pathColor: '#6420d9',
+                        finalScore:
+                            evolutionMap.top1_path[
+                                evolutionMap.top1_path.length - 1
+                            ][1],
+                        evolutionPathData: evolutionMap.top1_path.map(
+                            (point) => ({
+                                iteration: point[0],
+                                score: point[1],
+                                improvement: point[2],
+                            })
+                        ),
+                    })
+                }
+
+                return {
+                    meta,
+                    y_axis_min: Math.floor(evolutionMap.y_axis_min * 100) / 100,
+                    scatterPoints,
+                    bestScores,
+                    bestScoreLabels,
+                    top3EvolutionPaths,
+                }
+            }
+
+            // 填充背景与目标区域
+            function fillBackgroundSection(background) {
+                if (!background) return
+
+                const execResults = background.execution_results || {}
+                const params = background.parameters || {}
+
+                // 填充执行结果表格
+                const resultTable = document.querySelector(
+                    '.result-table-wrapper tbody'
+                )
+                if (resultTable && execResults) {
+                    resultTable.innerHTML = `
+                                    <tr>
+                                        <td class="table-label">总节点数</td>
+                                        <td class="table-value">${
+                                            execResults.total_iteration || '-'
+                                        }</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-label">最高综合评分</td>
+                                        <td class="table-value highlight-value">${
+                                            Math.floor(
+                                                execResults.best_combined_score *
+                                                    100
+                                            ) / 100 || '-'
+                                        }</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-label">最佳结果所在迭代</td>
+                                        <td class="table-value">${
+                                            execResults.best_iteration ?? '-'
+                                        }</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-label">最佳结果所在世代</td>
+                                        <td class="table-value">${
+                                            execResults.best_generation ?? '-'
+                                        }</td>
+                                    </tr>
+                                `
+                }
+
+                // 填充参数设定表格
+                const paramTable = document.querySelector(
+                    '.param-table-wrapper tbody'
+                )
+                if (paramTable && params) {
+                    paramTable.innerHTML = `
+                                   <tr>
+                                        <td class="table-label">最大演化轮次</td>
+                                        <td class="table-value">${
+                                            params.max_iterations || '-'
+                                        }</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-label">种群规模</td>
+                                        <td class="table-value">${
+                                            params.population_size || '-'
+                                        }</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="table-label">岛屿数量</td>
+                                        <td class="table-value">${
+                                            params.num_islands || '-'
+                                        }</td>
+                                    </tr>
+                                `
+                }
+
+                // 填充用户需求
+                if (background.user_requirements) {
+                    const cardTitles =
+                        document.querySelectorAll('.card .card-title')
+                    let userReqTextBox = null
+                    cardTitles.forEach((title) => {
+                        if (title.textContent.includes('用户需求分析')) {
+                            userReqTextBox = title.nextElementSibling
+                        }
+                    })
+                    if (
+                        userReqTextBox &&
+                        userReqTextBox.classList.contains('text-box')
+                    ) {
+                        userReqTextBox.innerHTML = `<p>${background.user_requirements}</p>`
+                        MathJax.typesetPromise([userReqTextBox]).then(() => {
+                            console.log('公式渲染完成')
+                        })
+                    }
+                }
+            }
+
+            // 填充最优解分析区域
+            function fillBestSolutionSection(bestSolution) {
+                if (!bestSolution) return
+
+                // 填充标题 meta info
+                const metaInfo = document.querySelector(
+                    '#best-solution .meta-info'
+                )
+                if (metaInfo) {
+                    metaInfo.innerHTML = `
+                                    <span class="badge">Program #${
+                                        bestSolution.program_id || '-'
+                                    }</span>
+                                    <span class="score">综合得分: <strong>${
+                                        Math.floor(bestSolution.score * 100) /
+                                            100 || '-'
+                                    }</strong></span>
+                                `
+                }
+
+                // 填充策略思路
+                const strategyText = document.getElementById('strategyBox')
+                if (strategyText && bestSolution.strategy) {
+                    strategyText.textContent = bestSolution.strategy
+                }
+
+                // 填充代码核心差异
+                const codeDiffBox = document.getElementById('codeDiffBox')
+                if (codeDiffBox && bestSolution.code_diff) {
+                    codeDiffBox.textContent = bestSolution.code_diff
+                }
+
+                // 填充 score_diff 数据（柱状图和指标分析）
+                if (bestSolution.score_diff) {
+                    const scoreDiff = bestSolution.score_diff
+
+                    // 获取分数和比例
+                    const oldScore = scoreDiff.combined_score_old || 0
+                    const newScore = scoreDiff.combined_score_new || 0
+                    const ratio = scoreDiff.ratio || 0
+
+                    // 直接使用 ratio 作为倍数，转换为百分比提升
+                    // ratio = 2.77 表示是原来的 2.77 倍，即提升 177%
+                    const percentIncrease = ((ratio - 1) * 100).toFixed(0)
+
+                    // 计算柱状图高度比例
+                    const maxScore = Math.max(oldScore, newScore)
+                    const baselineHeight =
+                        maxScore > 0
+                            ? ((oldScore / maxScore) * 100).toFixed(0)
+                            : 0
+                    const currentHeight = 100 // 新得分始终为 100%
+
+                    // 填充提升百分比
+                    const metricValue = document.querySelector(
+                        '.metric-card-large .metric-value'
+                    )
+                    if (metricValue) {
+                        metricValue.textContent = `+${percentIncrease}%`
+                    }
+
+                    // 填充柱状图高度
+                    const baselineBar = document.querySelector('.bar.baseline')
+                    const currentBar = document.querySelector('.bar.current')
+                    if (baselineBar) {
+                        baselineBar.style.height = `${baselineHeight}%`
+                    }
+                    if (currentBar) {
+                        currentBar.style.height = `${currentHeight}%`
+                    }
+
+                    // 填充评估指标分析文本
+                    if (scoreDiff.analysis) {
+                        const performanceTextBoxes = document.querySelectorAll(
+                            '.performance-text-box p'
+                        )
+                        if (performanceTextBoxes.length > 0) {
+                            // 替换第一个 <p>，保留第二个 <p>
+                            performanceTextBoxes[0].innerHTML =
+                                scoreDiff.analysis
+                        }
+                    }
+                }
+            }
+
+            // 填充代码实现区域
+            function fillCodeSection(code) {
+                if (!code) return
+
+                // 填充语言标签
+                const langTag = document.querySelector('.language-tag')
+                if (langTag && code.language) {
+                    langTag.textContent = code.language.toUpperCase()
+                }
+
+                // 填充代码内容
+                const codeContent = document.querySelector(
+                    '#code-content pre code'
+                )
+                if (codeContent && code.lines) {
+                    codeContent.innerHTML = code.lines
+                        .map((line, index) => {
+                            return `<span class="line" data-line="${
+                                index + 1
+                            }">${line}</span>`
+                        })
+                        .join('\n')
+                }
+
+                // 填充代码讲解
+                const explanationContent = document.querySelector(
+                    '#explanation-content'
+                )
+                if (explanationContent && code.explanations) {
+                    explanationContent.innerHTML = code.explanations
+                        .map(([lines, text]) => {
+                            return `
+                                        <div class="explanation-item" data-lines="${lines}">
+                                            <div class="line-ref">第 ${lines} 行</div>
+                                            <p>${text}</p>
+                                        </div>
+                                    `
+                        })
+                        .join('')
+                }
+            }
+
+            document.addEventListener('DOMContentLoaded', async function () {
+                // 加载并填充数据，获取演化数据
+                const evolutionData = await loadAndFillData()
+
+                // 初始化图表
+                if (evolutionData) {
+                    await initCharts(evolutionData)
+                }
+
+                // 代码hover高亮同步
+                const codeLines = document.querySelectorAll('.line')
+                const explanationItems =
+                    document.querySelectorAll('.explanation-item')
+
+                codeLines.forEach((line) => {
+                    line.addEventListener('mouseenter', function () {
+                        const lineNum = this.getAttribute('data-line')
+                        explanationItems.forEach((item) => {
+                            const lines = item.getAttribute('data-lines')
+                            const arr = lines.split('-') || []
+                            if (
+                                arr.length > 1 &&
+                                parseInt(arr[0], 10) <= lineNum &&
+                                parseInt(arr[1], 10) >= lineNum
+                            ) {
+                                item.classList.add('active')
+                                item.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'nearest',
+                                })
+                            }
+                        })
+                        this.classList.add('highlighted')
+                    })
+
+                    line.addEventListener('mouseleave', function () {
+                        explanationItems.forEach((item) => {
+                            item.classList.remove('active')
+                        })
+                        this.classList.remove('highlighted')
+                    })
+                })
+                // 初始化图表
+                async function initCharts(evolutionData) {
+                    if (!evolutionData) return
+
+                    const {
+                        meta,
+                        y_axis_min,
+                        scatterPoints,
+                        bestScores,
+                        bestScoreLabels,
+                        top3EvolutionPaths,
+                    } = evolutionData
+                    const iterationRange = Math.max(
+                        1,
+                        meta.xAxis.max - meta.xAxis.min
+                    )
+                    const scoreRange = Math.max(
+                        1e-6,
+                        meta.yAxis.max - meta.yAxis.min
+                    )
+
+                    function buildText(label) {
+                        const filler = ''
+                        const source = (label || '') + filler
+                        return source.slice(0, 10)
+                    }
+
+                    // clamp, drawRoundedRect, drawCalloutBox 已移到全局作用域
+
+                    const charts = []
+
+                    function formatTooltip(params, axisLabel = 'Iteration') {
+                        if (!Array.isArray(params)) {
+                            params = [params]
+                        }
+                        const axisValue = Array.isArray(params[0].value)
+                            ? params[0].value[0]
+                            : params[0].data?.value?.[0]
+                        const header =
+                            axisValue !== undefined
+                                ? `${axisLabel}: ${axisValue}`
+                                : ''
+                        let lines = ''
+                        console.log(params)
+                        if (params.length > 1) {
+                            const currentItem = params.find(
+                                (item) => item.seriesType === 'line'
+                            )
+                            lines = `${currentItem.seriesName === '评分突破程序' ? '当前突破评分' : '溯源节点评分'}: ${Math.floor(currentItem?.value?.[1] * 100) / 100}`
+                        } else {
+                            lines = `该节点评分: ${Math.floor(params[0]?.value?.[1] * 100) / 100}`
+                        }
+                        // const lines = params.map((item) => {
+                        //     const seriesName = item.seriesName || ''
+                        //     const valueArray = Array.isArray(item.value)
+                        //         ? item.value
+                        //         : item.data?.value || item.data?.coord || []
+                        //     const displayValue =
+                        //         valueArray[1] !== undefined
+                        //             ? Number(valueArray[1]).toFixed(3)
+                        //             : item.value
+                        //     return `${seriesName}: ${displayValue}`
+                        // })
+                        const body = lines
+                        return header ? `${header}<br/>${body}` : body
+                    }
+
+                    function createBestScoreChart() {
+                        const element =
+                            document.getElementById('bestScoreChart')
+                        if (!element || !window.echarts) return
+
+                        const chart = echarts.init(element)
+
+                        // ⚙️ 从后台数据取 y_axis_min
+                        const yAxisMin = y_axis_min
+
+                        // ⚙️ 过滤散点数据，只保留 >= y_axis_min 的
+                        const scatterData = scatterPoints
+                            .filter((p) => p.score >= yAxisMin)
+                            .map((p) => [p.iteration, p.score])
+
+                        // ⚙️ 同样过滤 bestScoreData
+                        const bestScoreData = bestScores
+                            .filter((p) => p.score >= yAxisMin)
+                            .map((p) => [p.iteration, p.score])
+
+                        // ⚙️ 构建带标签的关键数据点，手动上下交错避免重叠
+                        let labelIndex = 0
+                        const bestScoreWithLabels = bestScores.map((point) => {
+                            const labelInfo = bestScoreLabels.find(
+                                (label) => label.iteration === point.iteration
+                            )
+                            if (labelInfo) {
+                                const isEven = labelIndex % 2 === 0
+                                labelIndex++
+                                return {
+                                    value: [point.iteration, point.score],
+                                    label: {
+                                        show: true,
+                                        formatter: buildText(labelInfo.text),
+                                        position: 'bottom',
+                                        distance: 20,
+                                        color: '#ebebeb',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        backgroundColor: '#1A1B1D',
+                                        borderColor: '#0aa3a3',
+                                        borderWidth: 1.5,
+                                        padding: [6, 12],
+                                        borderRadius: 6,
+                                    },
+                                    symbolSize: 8,
+                                    symbol: 'circle',
+                                    itemStyle: {
+                                        color: '#0aa3a3',
+                                        borderWidth: 0,
+                                    },
+                                }
+                            }
+                            return [point.iteration, point.score]
+                        })
+
+                        const option = {
+                            backgroundColor: 'transparent',
+                            grid: {
+                                left: 70,
+                                right: 70,
+                                top: 70,
+                                bottom: 60,
+                                containLabel: true,
+                            },
+                            labelLayout: {
+                                hideOverlap: true,
+                                moveOverlap: 'shiftY', // 垂直移动避免重叠
+                            },
+                            legend: {
+                                data: [
+                                    {
+                                        name: '评分突破程序',
+                                        // ⚙️ 图例图标用稳定矩形
+                                        icon: 'path://M0 2 L25 2 L25 4 L0 4 Z',
+                                        itemStyle: { color: '#0aa3a3' },
+                                    },
+                                    {
+                                        name: '全部节点程序',
+                                        icon: 'circle',
+                                        itemStyle: { color: '#ebebeb' },
+                                    },
+                                ],
+                                textStyle: { color: '#ebebeb', fontSize: 12 },
+                                top: 20,
+                            },
+                            tooltip: {
+                                trigger: 'axis',
+                                axisPointer: {
+                                    lineStyle: {
+                                        color: '#ebebeb',
+                                        type: 'dashed',
+                                    },
+                                },
+                                formatter: (params) =>
+                                    formatTooltip(params, meta.xAxis.label),
+                            },
+                            xAxis: {
+                                type: 'value',
+                                name: meta.xAxis.label,
+                                nameLocation: 'center',
+                                nameGap: 35,
+                                min: meta.xAxis.min,
+                                max: meta.xAxis.max,
+                                axisLabel: { color: '#ebebeb', fontSize: 11 },
+                                nameTextStyle: {
+                                    color: '#ebebeb',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                },
+                                axisLine: { lineStyle: { color: '#222426' } },
+                                axisTick: { show: true, alignWithLabel: true },
+                                splitLine: {
+                                    lineStyle: {
+                                        color: '#222426',
+                                        type: 'dashed',
+                                        width: 1,
+                                    },
+                                },
+                            },
+                            yAxis: {
+                                type: 'value',
+                                name: meta.yAxis.label,
+                                nameLocation: 'center',
+                                nameGap: 45,
+                                // ⚙️ Y 轴下限用 yAxisMin
+                                min: yAxisMin,
+                                max: meta.yAxis.max,
+                                axisLabel: { color: '#ebebeb', fontSize: 11 },
+                                nameTextStyle: {
+                                    color: '#ebebeb',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                },
+                                axisLine: { lineStyle: { color: '#222426' } },
+                                axisTick: { show: true },
+                                splitLine: {
+                                    lineStyle: {
+                                        color: '#222426',
+                                        type: 'dashed',
+                                        width: 1,
+                                    },
+                                },
+                            },
+                            series: [
+                                {
+                                    name: '全部节点程序',
+                                    type: 'scatter',
+                                    data: scatterData,
+                                    symbolSize: 6,
+                                    itemStyle: {
+                                        color: '#ebebeb',
+                                        opacity: 0.5,
+                                    },
+                                    emphasis: {
+                                        itemStyle: {
+                                            color: '#4A3DFF',
+                                            opacity: 0.9,
+                                        },
+                                    },
+                                },
+                                {
+                                    name: '评分突破程序',
+                                    type: 'line',
+                                    data: bestScoreWithLabels,
+                                    step: 'end',
+                                    smooth: false,
+                                    showSymbol: true,
+                                    lineStyle: { color: '#0aa3a3', width: 1 },
+                                    itemStyle: { color: '#0aa3a3' },
+                                    labelLine: {
+                                        show: true,
+                                        length: 20,
+                                        lineStyle: {
+                                            color: '#0aa3a3',
+                                            width: 1.5,
+                                            type: 'dashed',
+                                        },
+                                    },
+                                },
+                            ],
+                        }
+
+                        chart.setOption(option)
+                        charts.push(chart)
+                    }
+
+                    function createTopEvolutionChart() {
+                        const element = document.getElementById('topPathChart')
+                        if (!element || !window.echarts) {
+                            return
+                        }
+
+                        const chart = echarts.init(element)
+                        const primaryPath = top3EvolutionPaths[0]
+
+                        const scatterData = scatterPoints.map((point) => [
+                            point.iteration,
+                            point.score,
+                        ])
+                        const primaryData = primaryPath
+                            ? primaryPath.evolutionPathData.map((point) => [
+                                  point.iteration,
+                                  point.score,
+                              ])
+                            : []
+
+                        const primaryColor = primaryPath
+                            ? primaryPath.pathColor
+                            : '#4A3DFF'
+
+                        // ⚙️ 构建带标签的演化路径数据，手动上下交错避免重叠
+                        const primaryDataWithLabels = primaryPath
+                            ? primaryPath.evolutionPathData.map(
+                                  (point, index) => {
+                                      const isEven = index % 2 === 0
+                                      return {
+                                          value: [point.iteration, point.score],
+                                          label: {
+                                              show: point.improvement
+                                                  ? true
+                                                  : false,
+                                              formatter: buildText(
+                                                  point.improvement || ''
+                                              ),
+                                              position: 'bottom',
+                                              distance: 20,
+                                              color: '#ebebeb',
+                                              fontSize: 12,
+                                              fontWeight: 600,
+                                              backgroundColor: '#1A1B1D',
+                                              borderColor: primaryColor,
+                                              borderWidth: 1.5,
+                                              padding: [6, 12],
+                                              borderRadius: 6,
+                                          },
+                                          symbol: 'circle',
+                                          symbolSize: 8,
+                                          itemStyle: {
+                                              color: primaryColor,
+                                              borderWidth: 0,
+                                          },
+                                      }
+                                  }
+                              )
+                            : []
+
+                        const legendItems = [
+                            {
+                                name: primaryPath.pathTitle,
+                                icon: 'path://M0 2 L25 2 L25 4 L0 4 Z',
+                            },
+                            { name: '全部节点程序', icon: 'circle' },
+                        ]
+
+                        const option = {
+                            backgroundColor: 'transparent',
+                            labelLayout: {
+                                hideOverlap: true,
+                                moveOverlap: 'shiftY', // 垂直移动避免重叠
+                            },
+                            grid: {
+                                left: 70,
+                                right: 70,
+                                top: 70,
+                                bottom: 60,
+                                containLabel: true,
+                            },
+                            legend: {
+                                data: legendItems,
+                                textStyle: { color: '#ebebeb', fontSize: 12 },
+                                top: 20,
+                            },
+                            tooltip: {
+                                trigger: 'axis',
+                                axisPointer: {
+                                    // type: 'cross',
+                                    lineStyle: {
+                                        color: '#ebebeb',
+                                        type: 'dashed',
+                                    },
+                                },
+                                formatter: (params) =>
+                                    formatTooltip(params, meta.xAxis.label),
+                            },
+                            xAxis: {
+                                type: 'value',
+                                name: meta.xAxis.label,
+                                nameLocation: 'center',
+                                nameGap: 35,
+                                min: meta.xAxis.min,
+                                max: meta.xAxis.max,
+                                axisLabel: { color: '#ebebeb', fontSize: 11 },
+                                nameTextStyle: {
+                                    color: '#ebebeb',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                },
+                                axisLine: { lineStyle: { color: '#222426' } },
+                                axisTick: { show: true, alignWithLabel: true },
+                                splitLine: {
+                                    lineStyle: {
+                                        color: '#222426',
+                                        type: 'dashed',
+                                        width: 1,
+                                    },
+                                },
+                            },
+                            yAxis: {
+                                type: 'value',
+                                name: meta.yAxis.label,
+                                nameLocation: 'center',
+                                nameGap: 45,
+                                min: meta.yAxis.min,
+                                max: meta.yAxis.max,
+                                axisLabel: { color: '#ebebeb', fontSize: 11 },
+                                nameTextStyle: {
+                                    color: '#ebebeb',
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                },
+                                axisLine: { lineStyle: { color: '#222426' } },
+                                axisTick: { show: true },
+                                splitLine: {
+                                    lineStyle: {
+                                        color: '#222426',
+                                        type: 'dashed',
+                                        width: 1,
+                                    },
+                                },
+                            },
+                            series: [
+                                {
+                                    name: '全部节点程序',
+                                    type: 'scatter',
+                                    data: scatterData,
+                                    symbolSize: 6,
+                                    itemStyle: {
+                                        color: '#ebebeb',
+                                        opacity: 0.5,
+                                    },
+                                    emphasis: {
+                                        itemStyle: {
+                                            color: '#4A3DFF',
+                                            opacity: 0.9,
+                                        },
+                                    },
+                                },
+                                {
+                                    name: primaryPath.pathTitle,
+                                    type: 'line',
+                                    data: primaryDataWithLabels,
+                                    smooth: false,
+                                    showSymbol: true,
+                                    lineStyle: {
+                                        color: primaryColor,
+                                        width: 1,
+                                    },
+                                    itemStyle: { color: primaryColor },
+                                    labelLine: {
+                                        show: true,
+                                        length: 20,
+                                        lineStyle: {
+                                            color: primaryColor,
+                                            width: 1.5,
+                                            type: 'dashed',
+                                        },
+                                    },
+                                },
+                            ],
+                        }
+                        chart.setOption(option)
+                    }
+
+                    createBestScoreChart()
+                    createTopEvolutionChart()
+
+                    if (charts.length) {
+                        window.addEventListener('resize', () => {
+                            charts.forEach((chart) => chart.resize())
+                        })
+                    }
+                }
+            })
+        </script>
+    </body>
+</html>

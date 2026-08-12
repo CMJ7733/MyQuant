@@ -1,0 +1,318 @@
+# Circle Packing Experiment Configuration
+# Target: Maximize sum of radii for n=26 circles in unit square
+# AlphaEvolve benchmark result: 2.635
+
+# =============================================================================
+# Experiment Configuration - WHAT to optimize
+# =============================================================================
+experiment:
+  name: mlebench-siim-covid19-detection
+  task_description: |
+    You are an experienced machine learning algorithm engineer with expertise in end-to-end system optimization, feature engineering, robust neural network design, and efficient model development using PyTorch.
+    Your current task is to design a machine learning/deep learning algorithm based on the requirements above. You have full freedom to redesign, enhance, or replace any of the following components:
+     - Data loading and preprocessing (including augmentation, normalization, etc.)
+     - Feature engineering or preprocessing (including selection, transformation, and normalization)
+     - Choose suitable state-of-the-art models tailored to the task characteristics.
+     - Integration of ML/DL algorithms (XGBoost, Random Forest, etc.)
+     - Neural network architecture (custom layers, activation functions, attention mechanisms, normalization, regularization, etc.)
+     - Training objectives (custom loss functions, auxiliary tasks, or multi-task learning)
+     - Regularization strategies (dropout, weight decay, label smoothing, etc.)
+     - Hyperparameter optimization (learning rate, schedulers, batch size, model depth/width, etc.)
+     - Cross-validation for hyperparameter tuning (searching for optimal hyperparameters on the training set via cross-validation, then training the final model on the validation set)
+     - Efficient training/inference pipelines (batching, data loading, distributed training, etc.)
+     - Numerical stability and reproducibility (any known techniques to improve performance or efficiency in this domain)
+     - ML tricks, Kaggle techniques, feature selection, feature engineering, model ensembling, etc.
+    You may combine multiple steps, design new functional pipelines, restructure model architectures, or adopt any standard or innovative ML methods (as long as implemented in Python).
+    **Imporatance Note**: When designing your solution, you should also take into account the timeframe in which the competition was held. Some competitions took place over ten years ago, when many of today's powerful models did not yet exist and deep learning itself was still in its early stages. In fact, you could even outperform others by combining straightforward machine learning approaches with well-chosen implementation tricks. 
+
+    # Core Task Info
+    {
+        "Task Type": "Classification",
+        "Data Type": "Image (Computer Vision)",
+        "Brief Description": "This competition challenges participants to develop a computer vision model to identify and localize COVID-19 abnormalities on chest radiographs. The task is twofold: at the image level, detect and draw bounding boxes around lung opacities, and at the study level, classify the radiograph as 'negative for pneumonia', 'typical', 'indeterminate', or 'atypical' for COVID-19.",
+        "Dataset Description": "The dataset is designed for a dual object detection and classification task on chest radiographs. It is structured into `train` and `test` directories, each containing subdirectories for individual studies and series, which in turn hold the chest scan images in DICOM (`.dcm`) format.\n\nKey files in the dataset include:\n- `train/` and `test/`: These folders contain the DICOM image files, organized by study and series IDs.\n- `train_study_level.csv`: Provides study-level labels. It has an `id` column for each study and four binary columns indicating the classification: `Negative for Pneumonia`, `Typical Appearance`, `Indeterminate Appearance`, and `Atypical Appearance`.\n- `train_image_level.csv`: Contains image-level annotations. It includes an `id` for each image, a `StudyInstanceUID`, a `label` string with class and bounding box information (e.g., 'opacity 1 x_min y_min x_max y_max'), and a `boxes` column with bounding box coordinates in a dictionary format.\n- `train_meta.csv` and `test_meta.csv`: These files provide metadata for the images, including `image_id`, `series_id`, and image dimensions (`dim0`, `dim1`).\n- `sample_submission.csv`: A sample file demonstrating the required submission format for both study-level and image-level predictions.",
+        "Submission Specifications": "The submission must be a CSV file named `submission.csv` with two columns: `Id` and `PredictionString`.\n- The `Id` column must contain unique identifiers for each study and image in the test set, formatted as `{id}_study` or `{id}_image`.\n- The `PredictionString` column contains the predictions. \n  - For study-level predictions, the format is `class_name confidence 0 0 1 1`. Multiple labels can be provided for a single study, separated by spaces (e.g., `indeterminate 1 0 0 1 1 atypical 1 0 0 1 1`). The classes are `negative`, `typical`, `indeterminate`, `atypical`.\n  - For image-level predictions, the format is `class_name confidence xmin ymin xmax ymax`. The class is `opacity`. Multiple bounding boxes can be predicted for a single image. If no opacities are found, the prediction should be `none 1 0 0 1 1`.",
+        "Submission channel number to each sample": 4,
+        "Metric Evaluation Description": "Submissions are evaluated using the mean Average Precision (mAP) at an Intersection over Union (IoU) threshold of 0.5, based on the PASCAL VOC 2010 methodology. The evaluation considers predictions at both the study and image levels. \n- For image-level 'opacity' predictions, the mAP is calculated by comparing the predicted bounding boxes against the ground truth boxes. \n- For study-level classifications ('negative', 'typical', 'indeterminate', 'atypical'), predictions are submitted with a dummy bounding box (`0 0 1 1`), and they are treated as distinct classes in the overall mAP calculation. \n- The final score is the mean of the Average Precision (AP) calculated for each class across all images and studies.",
+        "Metric Name": "mean Average Precision (mAP)",
+        "Metric Direction": true,
+        "Longer time limit required": "True"
+    }
+
+    # Dataset
+
+    ## Data path:
+    /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/siim-covid19-detection/prepared/public
+    
+    ## File tree:
+    ```
+    ./
+    ├── test/
+    │   ├── 000c9c05fd14/
+    │   │   ├── e555410bd2cd/
+    │   │   │   ├── 51759b5579bc.dcm (17.6 MB)
+    │   ├── 00c74279c5b7/
+    │   │   ├── ca867739fd1b/
+    │   │   │   ├── 136af218f8df.dcm (15.7 MB)
+    │   ├── ... (+604 more directories)
+    │   ├── meta.csv (14.7 kB)
+    ├── train/
+    │   ├── 00086460a852/
+    │   │   ├── 9e8302230c91/
+    │   │   │   ├── 65761e66de9f.dcm (13.0 MB)
+    │   ├── 00292f8c37bd/
+    │   │   ├── 73120b4a13cb/
+    │   │   │   ├── f6293b1c49e2.dcm (15.5 MB)
+    │   ├── ... (+5446 more directories)
+    ├── train_image_level.csv (1.1 MB)
+    ├── meta.csv (205.1 kB)
+    ├── train_meta.csv (205.1 kB)
+    ├── train_study_level.csv (147.2 kB)
+    ├── sample_submission.csv (44.7 kB)
+    ├── description.md (27.3 kB)
+    ├── test_meta.csv (14.7 kB)```
+    
+    
+    ## File details:
+    
+     (Showing details for representative files out of many)
+    
+    ### meta.csv: 
+    #### 1.DataFrame preview:
+    It has 5696 rows and 4 columns.
+    Here is some information about the columns:
+    dim0 (int64) has range: 1140.00 - 4891.00, 0 nan values
+    dim1 (int64) has range: 846.00 - 4891.00, 0 nan values
+    image_id (object) has 5696 unique values. Some example values: ['d31e19c88336', 'd824859c732d', '20207b3b8a07', '8e45c71fa47d']
+    series_id (object) has 5693 unique values. Some example values: ['d5832b266b40', '309ec8192930', '3bfb2996e73a', 'efcd80b55017']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+           image_id     series_id  dim0  dim1
+    0  65761e66de9f  9e8302230c91  2783  2330
+    1  f6293b1c49e2  73120b4a13cb  3050  2539
+    2  3019399c31f4  e34afce999c5  3052  3052
+    
+    ### sample_submission.csv: 
+    #### 1.DataFrame preview:
+    It has 1244 rows and 2 columns.
+    Here is some information about the columns:
+    PredictionString (object) has 2 unique values: ['negative 1 0 0 1 1', 'none 1 0 0 1 1']
+    id (object) has 1244 unique values. Some example values: ['ffe942c8655f_image', '000c9c05fd14_study', '00c74279c5b7_study', '00ccd633fb0e_study']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                       id    PredictionString
+    0  000c9c05fd14_study  negative 1 0 0 1 1
+    1  00c74279c5b7_study  negative 1 0 0 1 1
+    2  00ccd633fb0e_study  negative 1 0 0 1 1
+    
+    ### test_meta.csv: 
+    #### 1.DataFrame preview:
+    It has 638 rows and 3 columns.
+    Here is some information about the columns:
+    dim0 (int64) has range: 1140.00 - 4240.00, 0 nan values
+    dim1 (int64) has range: 1387.00 - 4891.00, 0 nan values
+    image_id (object) has 638 unique values. Some example values: ['84ed5f7f71bf', '51759b5579bc', '136af218f8df', '45742200dd51']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+           image_id  dim0  dim1
+    0  51759b5579bc  3093  2850
+    1  136af218f8df  2801  2802
+    2  45742200dd51  2544  3056
+    
+    ### train_image_level.csv: 
+    #### 1.DataFrame preview:
+    It has 5696 rows and 4 columns.
+    Here is some information about the columns:
+    StudyInstanceUID (object) has 5448 unique values. Some example values: ['0fd2db233deb', '8943d1d85097', 'a0254bf8a96e', '970c96c9fa5d']
+    boxes (object) has 3879 unique values. Some example values: ["[{'x': 2729.27083, 'y': 332.26044, 'width': 1496.25016, 'height': 2604.58334}, {'x': 1005.8125, 'y': 1584.67711, 'width': 662.22913, 'height': 775.83337}]", "[{'x': 789.28836, 'y': 582.43035, 'width': 1026.65662, 'height': 1917.30292}, {'x': 2245.91208, 'y': 591.20528, 'width': 1094.66162, 'height': 1761.54944}]", "[{'x': 677.42216, 'y': 197.97662, 'width': 867.79767, 'height': 999.78214}, {'x': 1792.69064, 'y': 402.5525, 'width': 617.02734, 'height': 1204.358}]", "[{'x': 2729, 'y': 2181.33331, 'width': 948.00012, 'height': 604}]"]
+    id (object) has 5696 unique values. Some example values: ['fe426d79609d_image', 'fe48a35656bd_image', 'fe493b5fe38b_image', 'fe51be23ad08_image']
+    label (object) has 3880 unique values. Some example values: ['none 1 0 0 1 1', 'opacity 1 719.39821 296.42478 1398.54866 1579.6814000000002 opacity 1 1800.03538 258.90265 2670.54856 1711.00879', 'opacity 1 385.78112 545.19869 1306.21325 1968.26687 opacity 1 1613.55754 673.25881 2457.1536100000003 2113.93532', 'opacity 1 809.22886 2014.83214 1156.38987 2368.48204']
+    Columns containing NaN values: boxes
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                       id  ... StudyInstanceUID
+    0  000a312787f2_image  ...     5776db0cec75
+    1  000c3a3f293f_image  ...     ff0879eb20ed
+    2  0012ff7358bc_image  ...     9d514ce429a7
+    
+    [3 rows x 4 columns]
+    
+    ### train_meta.csv: 
+    #### 1.DataFrame preview:
+    It has 5696 rows and 4 columns.
+    Here is some information about the columns:
+    dim0 (int64) has range: 1140.00 - 4891.00, 0 nan values
+    dim1 (int64) has range: 846.00 - 4891.00, 0 nan values
+    image_id (object) has 5696 unique values. Some example values: ['d31e19c88336', 'd824859c732d', '20207b3b8a07', '8e45c71fa47d']
+    series_id (object) has 5693 unique values. Some example values: ['d5832b266b40', '309ec8192930', '3bfb2996e73a', 'efcd80b55017']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+           image_id     series_id  dim0  dim1
+    0  65761e66de9f  9e8302230c91  2783  2330
+    1  f6293b1c49e2  73120b4a13cb  3050  2539
+    2  3019399c31f4  e34afce999c5  3052  3052
+    
+    ### train_study_level.csv: 
+    #### 1.DataFrame preview:
+    It has 5448 rows and 5 columns.
+    Here is some information about the columns:
+    Atypical Appearance (int64) has 2 unique values: [0, 1]
+    Indeterminate Appearance (int64) has 2 unique values: [0, 1]
+    Negative for Pneumonia (int64) has 2 unique values: [0, 1]
+    Typical Appearance (int64) has 2 unique values: [1, 0]
+    id (object) has 5448 unique values. Some example values: ['fff649d65f62_study', '00086460a852_study', '00292f8c37bd_study', '005057b3f880_study']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                       id  Negative for Pneumonia  Typical Appearance  Indeterminate Appearance  Atypical Appearance
+    0  00086460a852_study                       0                   1                         0                    0
+    1  00292f8c37bd_study                       1                   0                         0                    0
+    2  005057b3f880_study                       1                   0                         0                    0
+    
+    ### test/meta.csv: 
+    #### 1.DataFrame preview:
+    It has 638 rows and 3 columns.
+    Here is some information about the columns:
+    dim0 (int64) has range: 1140.00 - 4240.00, 0 nan values
+    dim1 (int64) has range: 1387.00 - 4891.00, 0 nan values
+    image_id (object) has 638 unique values. Some example values: ['84ed5f7f71bf', '51759b5579bc', '136af218f8df', '45742200dd51']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+           image_id  dim0  dim1
+    0  51759b5579bc  3093  2850
+    1  136af218f8df  2801  2802
+    2  45742200dd51  2544  3056
+
+    # Other Requirements
+     - Code Generation Requirements:
+        - Library Imports: All libraries must be imported at the beginning of the file. Implicit imports are prohibited.
+        - Feature Processing: Handle missing values and features conservatively. For uncertain feature types, first determine the type before selecting imputation and processing strategies.
+        - Computing resource: Provides sufficient CPU computing power and 1 A800 graphics cards, you can use them freely if necessary.
+        - CPU resources are relatively sufficient, so it is appropriate to run more workers during data processing and loading.
+        - Maximize GPU utilization and estimate a suitable batch size based on the number of model parameters.
+        - Try to use the latest models, which often bring better results. For example, efficient_net is often better than restnet, and the larger size of efficient_net, such as large, is also better than base.
+        - If you train a deep learning model, do not train for more than 10 epochs at the beginning. You can adjust it according to the results of the code execution. If it is underfitting, you can increase the epochs.
+        - For a deep learning task, predictions need to be made after each epoch of training and the corresponding submission_epoch.csv file needs to be generated. The storage path should remain consistent. For example, for a task that trains for 3 epochs, the first round of training predictions is saved as `submission_1.csv`, the second round of training predictions is saved as `submission_2.csv`, and so on...
+        - You need to save the trained model to the specified save address above. The model should be saved in the format of the `transformers` library. Furthermore, ensure that each epoch's model is saved in a folder following the naming convention `model_name_epoch`.
+        - If you intend to use certain models, you should use the name from Hugging Face rather than a local directory.
+        - Prioritize the `transformers` library over `timm` for all model loading operations.
+        - When a pre-trained model download from a remote repository like Hugging Face fails, attempt to use a different model rather than retrying the same one.
+        - **Do not use exception handling mechanisms in any data loading steps; expose potential issues instead, and never fabricate submission files.**
+        
+     - Code Style:
+        - Clear variable naming
+        - Optional type annotations
+        - Brief comments for key steps
+        - Print information about key steps instead of using tqdm to print the training process
+        - Print the metrics/loss for each fold/epoch on the training set and the validation set (if a validation set is configured; otherwise, print only the training set metrics).
+        - All variables and standard library functions must be defined before use
+        - Directly generate a complete, end-to-end CSV output(If the code includes multiple training epochs, a corresponding submission file must be saved for each epoch, formatted as: `submission_epoch.csv`. If the number of training epochs is very large, the files can be saved at specified intervals.)
+        - Provide executable code that runs without errors and produces the **submission.csv** file as required
+        Suppress all warnings to avoid displaying warning messages
+    
+    ## Ultimate Goal
+     - Maximize your score in this task/competition and rank higher on the leaderboard. Apply a combination of techniques (machine learning knowledge and Kaggle competition tricks) to achieve this.
+    
+    ## File Paths
+     - Submission file Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/siim-covid19-detection/submission.csv
+     - Model Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/siim-covid19-detection/model_save
+     - Read path: /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/siim-covid19-detection/prepared/public/
+
+    
+  language: python
+  strategy: example_strategy  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 50
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 100
+    migration_interval: 5
+    migration_size: 1
+    migration_topology: ring
+    reset_interval: 15
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    api_base: http://211.23.3.237:27544/v1
+    model: gemini-3.1-pro-preview
+    api_key: YOUR_API_KEY  # Replace with your API key or use environment variable
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 3600
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 14400
+    # GPU Usage (Optional)
+    gpu_ids: [3]      # Available GPU IDs (empty list = no GPU)
+    gpu_num_each_run: 1.0      # Number of GPUs per evaluation task
+    input_params:
+      competition_name: siim-covid19-detection
+  
+  # Monitoring Configuration (Optional)
+  monitor:
+    enabled: false  # Set to false to disable monitoring
+    type: wandb  # Monitoring backend type (currently only 'wandb' is supported)
+
+    # WandB-specific settings
+    wandb:
+      project: famou-mlebench  # WandB project name
+      entity: null  # WandB entity (username or team), null for default
+      run_name: null  # Run name, null for auto-generation
+      group: null  # Group name for grouping related runs
+      tags:
+        - mlebench
+        - creative_exploration
+      notes: "Circle packing optimization with creative exploration strategy"
+
+      # Async logging settings
+      async_mode: true  # Enable asynchronous (non-blocking) logging
+      num_workers: 4  # Number of async worker threads
+      queue_size: 100  # Max queue size for async logging
+
+      # What to monitor
+      track_metrics:
+        islands: true  # Track metrics for each island
+        performance: true  # Track performance metrics (best, avg, median scores)
+        population: true  # Track population metrics (size, generations)
+        diversity: true  # Track diversity metrics (genetic, code diversity)
+        cost: true  # Track LLM API costs
+      track_artifacts: true  # Track artifacts (best programs, visualizations)
+      track_lineage_tree: true  # Track lineage tree visualization
+      checkpoint_interval: 1  # Record metrics every N iterations
+
+  # langfuse configuration (optional)
+  # langfuse:
+  #   enabled: false  # Set to false to disable Langfuse integration
+  #   public_key: your_public_key
+  #   secret_key: your_secret_key
+  #   base_url: https://us.cloud.langfuse.com
+
+
+
+# =============================================================================
+# Module Parameters (optional) - ALGORITHM parameters
+# =============================================================================
+

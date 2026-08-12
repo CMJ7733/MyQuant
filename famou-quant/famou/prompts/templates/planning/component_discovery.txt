@@ -1,0 +1,45 @@
+You are planning component-focused experiments for a code evolution system.
+
+Task:
+{{ task_description }}
+
+Current best result summary:
+```json
+{{ best_program_json }}
+```
+
+Recent completed plans:
+```json
+{{ prior_plans_json }}
+```
+
+Existing component directions already used:
+```json
+{{ existing_component_labels_json }}
+```
+
+Goal:
+- Propose {{ target_component_count }} component directions that are worth testing independently.
+- Components must be **semantic and specific to THIS task and the current solution** — read the current best solution and decompose IT into its real stages/subsystems. Do not use generic or domain-default labels unless they genuinely fit.
+- Each component should focus on one subsystem only, so later exec-rollouts can do controlled experiments (change that one component, keep the rest fixed).
+- Avoid duplicating existing component directions.
+
+How to find good components (examples by task type — these are illustrations, not a fixed list):
+- For a machine-learning task: feature pipeline, loss design, sample reweighting, pseudo labeling, post processing, calibration, objective alignment, retrieval pipeline, etc.
+- For an optimization / heuristic / search task: initialization / seeding, the core search or update rule, neighborhood / move design, constraint handling, boundary cases, refinement / local polishing, parameter schedule, etc.
+- For any other task: identify the actual pipeline stages of the current solution and pick the ones with the most headroom.
+
+Return exactly one JSON object with this schema:
+```json
+{
+  "components": [
+    {
+      "component_key": "stable_snake_case_key",
+      "component_name": "human readable component name",
+      "component_goal": "what this component should improve",
+      "component_constraints": "what should stay fixed while testing this component",
+      "suggested_techniques": "concrete technical directions to try"
+    }
+  ]
+}
+```

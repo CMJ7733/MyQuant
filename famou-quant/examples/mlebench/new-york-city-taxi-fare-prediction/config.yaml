@@ -1,0 +1,264 @@
+# Circle Packing Experiment Configuration
+# Target: Maximize sum of radii for n=26 circles in unit square
+# AlphaEvolve benchmark result: 2.635
+
+# =============================================================================
+# Experiment Configuration - WHAT to optimize
+# =============================================================================
+experiment:
+  name: mlebench-new-york-city-taxi-fare-prediction
+  task_description: |
+    You are an experienced machine learning algorithm engineer with expertise in end-to-end system optimization, feature engineering, robust neural network design, and efficient model development using PyTorch.
+    Your current task is to design a machine learning/deep learning algorithm based on the requirements above. You have full freedom to redesign, enhance, or replace any of the following components:
+     - Data loading and preprocessing (including augmentation, normalization, etc.)
+     - Feature engineering or preprocessing (including selection, transformation, and normalization)
+     - Choose suitable state-of-the-art models tailored to the task characteristics.
+     - Integration of ML/DL algorithms (XGBoost, Random Forest, etc.)
+     - Neural network architecture (custom layers, activation functions, attention mechanisms, normalization, regularization, etc.)
+     - Training objectives (custom loss functions, auxiliary tasks, or multi-task learning)
+     - Regularization strategies (dropout, weight decay, label smoothing, etc.)
+     - Hyperparameter optimization (learning rate, schedulers, batch size, model depth/width, etc.)
+     - Cross-validation for hyperparameter tuning (searching for optimal hyperparameters on the training set via cross-validation, then training the final model on the validation set)
+     - Efficient training/inference pipelines (batching, data loading, distributed training, etc.)
+     - Numerical stability and reproducibility (any known techniques to improve performance or efficiency in this domain)
+     - ML tricks, Kaggle techniques, feature selection, feature engineering, model ensembling, etc.
+    You may combine multiple steps, design new functional pipelines, restructure model architectures, or adopt any standard or innovative ML methods (as long as implemented in Python).
+    **Imporatance Note**: When designing your solution, you should also take into account the timeframe in which the competition was held. Some competitions took place over ten years ago, when many of today's powerful models did not yet exist and deep learning itself was still in its early stages. In fact, you could even outperform others by combining straightforward machine learning approaches with well-chosen implementation tricks.
+    **When utilizing machine learning frameworks like XGBoost (xgb), and CatBoost, training should be performed on GPU rather than CPU.(Where possible, avoid using LightGBM, as its training time is excessively long and often unacceptable.)** 
+
+    # Core Task Info
+    {
+      "Task Type": "Regression",
+      "Data Type": "Tabular",
+      "Brief Description": "This competition challenges participants to predict the fare amount for a taxi ride in New York City. Given pickup and dropoff locations, along with other features like pickup time and passenger count, the goal is to build a machine learning model that outperforms a baseline model based solely on distance, aiming for a lower Root Mean-Squared Error (RMSE).",
+      "Dataset Description": "The dataset is provided in three main CSV files. The original `train.csv` has been processed and is now presented as `labels.csv`.\n- `labels.csv`: This file serves as the training set, containing approximately 55 million rows. It includes features such as `key` (a unique identifier), `pickup_datetime`, `pickup_longitude`, `pickup_latitude`, `dropoff_longitude`, `dropoff_latitude`, and `passenger_count`, along with the target variable `fare_amount`.\n- `test.csv`: This is the test set, containing about 10,000 rows with the same features as the training set but without the `fare_amount` column. The task is to predict the fare for each row in this file.\n- `sample_submission.csv`: This file provides an example of the required submission format, with two columns: `key` and the predicted `fare_amount`.",
+      "Submission Specifications": "The submission file must be a CSV file containing a header and two columns: `key` and `fare_amount`. For each `key` from the test set, you must provide a predicted `fare_amount`. The format should be as follows:\n```\nkey,fare_amount\n2015-01-27 13:08:24.0000002,11.00\n2015-02-27 13:08:24.0000002,12.05\n...\n```",
+      "Submission channel number to each sample": 1,
+      "Metric Evaluation Description": "The evaluation metric for this competition is the Root Mean-Squared Error (RMSE). RMSE quantifies the difference between the predicted fare amounts and the actual fare amounts (ground truth). It is calculated as the square root of the average of the squared differences between predictions and actual values. A smaller RMSE indicates a better model performance, as it signifies a smaller average error. The formula is given by: RMSE = sqrt( (1/n) * sum( (y_hat_i - y_i)^2 ) ), where 'y_hat_i' is the prediction for the i-th observation and 'y_i' is the actual value.",
+      "Metric Name": "RMSE",
+      "Metric Direction": false,
+      "Longer time limit required": "True"
+    }
+
+    # Dataset
+
+    ## Data path:
+    /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/new-york-city-taxi-fare-prediction/prepared/public
+    
+    ## File tree:
+    ```
+    ./
+    ├── labels.csv (5.7 GB)
+    ├── test.csv (968.9 kB)
+    ├── sample_submission.csv (343.7 kB)
+    ├── description.md (7.1 kB)
+    ├── GCP-Coupons-Instructions.rtf (486 Bytes)```
+    
+    ### Image dimension analysis:
+    No image files found in the directory.
+    
+    
+    ## File details:
+    
+     (Showing details for representative files out of many)
+    
+    ### labels.csv: 
+    #### 1.DataFrame preview:
+    It has 55413942 rows and 8 columns.
+    Here is some information about the columns:
+    dropoff_latitude (float64) has range: -3547.89 - 3537.13, 376 nan values
+    dropoff_longitude (float64) has range: -3442.02 - 3457.62, 376 nan values
+    fare_amount (float64) has range: -300.00 - 93963.36, 0 nan values
+    key (object) has 55413941 unique values. Some example values: ['2014-12-12 11:33:00.00000015', '2009-03-08 15:13:00.00000040', '2013-12-31 13:34:58.0000004', '2010-01-20 01:05:00.00000054']
+    passenger_count (int64) has range: 0.00 - 208.00, 0 nan values
+    pickup_datetime (object) has 26169867 unique values. Some example values: ['2013-11-03 01:29:00 UTC', '2009-11-01 01:17:00 UTC', '2010-11-07 01:01:00 UTC', '2010-11-07 01:10:00 UTC']
+    pickup_latitude (float64) has range: -3492.26 - 3408.79, 0 nan values
+    pickup_longitude (float64) has range: -3442.06 - 3457.63, 0 nan values
+    Columns containing NaN values: dropoff_longitude, dropoff_latitude
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                                 key  fare_amount          pickup_datetime  pickup_longitude  pickup_latitude  dropoff_longitude  dropoff_latitude  passenger_count
+    0  2014-03-30 12:14:00.000000128          4.5  2014-03-30 12:14:00 UTC        -73.988372        40.774460         -73.983295         40.767630                6
+    1    2009-09-25 22:18:00.0000008          4.5  2009-09-25 22:18:00 UTC        -73.971122        40.675378         -73.978622         40.663852                5
+    2   2014-04-16 17:43:00.00000016         10.5  2014-04-16 17:43:00 UTC        -73.976882        40.790245         -73.990007         40.764105                2
+    
+    ### sample_submission.csv: 
+    #### 1.DataFrame preview:
+    It has 9914 rows and 2 columns.
+    Here is some information about the columns:
+    fare_amount (float64) has 1 unique values: [11.35]
+    key (object) has 9914 unique values. Some example values: ['2014-09-05 11:20:53.0000004', '2010-10-01 21:26:11.0000001', '2013-10-06 01:38:00.00000083', '2012-03-30 19:13:53.0000001']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                                key  fare_amount
+    0   2010-10-01 21:26:11.0000001        11.35
+    1  2013-10-06 01:38:00.00000083        11.35
+    2   2012-03-30 19:13:53.0000001        11.35
+    
+    ### test.csv: 
+    #### 1.DataFrame preview:
+    It has 9914 rows and 7 columns.
+    Here is some information about the columns:
+    dropoff_latitude (float64) has range: -74.01 - 41.06, 0 nan values
+    dropoff_longitude (float64) has range: -75.44 - 40.80, 0 nan values
+    key (object) has 9914 unique values. Some example values: ['2014-09-05 11:20:53.0000004', '2010-10-01 21:26:11.0000001', '2013-10-06 01:38:00.00000083', '2012-03-30 19:13:53.0000001']
+    passenger_count (int64) has 7 unique values: [1, 2, 5, 3, 6, 4, 0]
+    pickup_datetime (object) has 9907 unique values. Some example values: ['2009-02-26 20:03:00 UTC', '2013-04-30 11:18:00 UTC', '2011-09-19 17:40:00 UTC', '2011-09-25 10:28:00 UTC']
+    pickup_latitude (float64) has range: -74.00 - 41.37, 0 nan values
+    pickup_longitude (float64) has range: -74.18 - 40.79, 0 nan values
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                                key          pickup_datetime  pickup_longitude  pickup_latitude  dropoff_longitude  dropoff_latitude  passenger_count
+    0   2010-10-01 21:26:11.0000001  2010-10-01 21:26:11 UTC        -73.983130        40.761970         -73.994386         40.749236                1
+    1  2013-10-06 01:38:00.00000083  2013-10-06 01:38:00 UTC        -73.948505        40.753977         -73.808195         40.731952                2
+    2   2012-03-30 19:13:53.0000001  2012-03-30 19:13:53 UTC        -73.973964        40.791979         -73.979018         40.785544                1
+
+    # Other Requirements
+     - Code Generation Requirements:
+        - Library Imports: All libraries must be imported at the beginning of the file. Implicit imports are prohibited.
+        - Feature Processing: Handle missing values and features conservatively. For uncertain feature types, first determine the type before selecting imputation and processing strategies.
+        - Computing resource: Provides sufficient CPU computing power and 1 A800 graphics cards, you can use them freely if necessary.
+        - CPU resources are relatively sufficient, so it is appropriate to run more workers during data processing and loading.
+        - Maximize GPU utilization and estimate a suitable batch size based on the number of model parameters.
+        - Try to use the latest models, which often bring better results. For example, efficient_net is often better than restnet, and the larger size of efficient_net, such as large, is also better than base.
+        - If you train a deep learning model, do not train for more than 10 epochs at the beginning. You can adjust it according to the results of the code execution. If it is underfitting, you can increase the epochs.
+        - For a deep learning task, predictions need to be made after each epoch of training and the corresponding submission_epoch.csv file needs to be generated. The storage path should remain consistent. For example, for a task that trains for 3 epochs, the first round of training predictions is saved as `submission_1.csv`, the second round of training predictions is saved as `submission_2.csv`, and so on...
+        - You need to save the trained model to the specified save address above. The model should be saved in the format of the `transformers` library. Furthermore, ensure that each epoch's model is saved in a folder following the naming convention `model_name_epoch`.
+        - If you intend to use certain models, you should use the name from Hugging Face rather than a local directory.
+        - Prioritize the `transformers` library over `timm` for all model loading operations.
+        - When a pre-trained model download from a remote repository like Hugging Face fails, attempt to use a different model rather than retrying the same one.
+        - **Do not use exception handling mechanisms in any data loading steps; expose potential issues instead, and never fabricate submission files.**
+        
+     - Code Style:
+        - Clear variable naming
+        - Optional type annotations
+        - Brief comments for key steps
+        - Print information about key steps instead of using tqdm to print the training process
+        - All variables and standard library functions must be defined before use
+        - Directly generate a complete, end-to-end CSV output
+        - Provide executable code that runs without errors and produces the **submission.csv** file as required
+        Suppress all warnings to avoid displaying warning messages
+    
+    ## Ultimate Goal
+      - Maximize your score in this task/competition and rank higher on the leaderboard. Apply a combination of techniques (machine learning knowledge and Kaggle competition tricks) to achieve this.
+
+    ## Scheme Limitations
+      - Your proposed solutions must account for time constraints. The running time of any plan should not exceed 6 hours; otherwise, it will be difficult to complete execution smoothly.
+    
+    ## File Paths
+     - Submission file Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/new-york-city-taxi-fare-prediction/submission.csv
+     - Model Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/new-york-city-taxi-fare-prediction/model_save
+     - Read path: /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/new-york-city-taxi-fare-prediction/prepared/public/
+
+    
+  language: python
+  strategy: example_strategy  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 50
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  # Experience system
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+    l1_trigger: interval
+    l1_interval: 6
+    l0_path: ./famou_data/circle_packing_evolution_20260319_012359_6089/
+
+  # Knowledge system (MethodCard)
+  knowledge:
+    enabled: false
+    source_dir: knowledge
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 100
+    migration_interval: 5
+    migration_size: 1
+    migration_topology: ring
+    reset_interval: 15
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    api_base: http://211.23.3.237:27544/v1
+    model: gemini-3-pro-preview
+    api_key: YOUR_API_KEY  # Replace with your API key or use environment variable
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 3600
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 14400
+    # GPU Usage (Optional)
+    gpu_ids: [2]      # Available GPU IDs (empty list = no GPU)
+    gpu_num_each_run: 1.0      # Number of GPUs per evaluation task
+    input_params:
+      competition_name: new-york-city-taxi-fare-prediction
+  
+  # Monitoring Configuration (Optional)
+  monitor:
+    enabled: false  # Set to false to disable monitoring
+    type: wandb  # Monitoring backend type (currently only 'wandb' is supported)
+
+    # WandB-specific settings
+    wandb:
+      project: famou-mlebench  # WandB project name
+      entity: null  # WandB entity (username or team), null for default
+      run_name: null  # Run name, null for auto-generation
+      group: null  # Group name for grouping related runs
+      tags:
+        - mlebench
+        - creative_exploration
+      notes: "Circle packing optimization with creative exploration strategy"
+
+      # Async logging settings
+      async_mode: true  # Enable asynchronous (non-blocking) logging
+      num_workers: 4  # Number of async worker threads
+      queue_size: 100  # Max queue size for async logging
+
+      # What to monitor
+      track_metrics:
+        islands: true  # Track metrics for each island
+        performance: true  # Track performance metrics (best, avg, median scores)
+        population: true  # Track population metrics (size, generations)
+        diversity: true  # Track diversity metrics (genetic, code diversity)
+        cost: true  # Track LLM API costs
+      track_artifacts: true  # Track artifacts (best programs, visualizations)
+      track_lineage_tree: true  # Track lineage tree visualization
+      checkpoint_interval: 1  # Record metrics every N iterations
+
+  # langfuse configuration (optional)
+  # langfuse:
+  #   enabled: false  # Set to false to disable Langfuse integration
+  #   public_key: your_public_key
+  #   secret_key: your_secret_key
+  #   base_url: https://us.cloud.langfuse.com
+
+
+
+# =============================================================================
+# Module Parameters (optional) - ALGORITHM parameters
+# =============================================================================
+

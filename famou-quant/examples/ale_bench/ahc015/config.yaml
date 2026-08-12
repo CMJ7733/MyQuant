@@ -1,0 +1,235 @@
+experiment:
+  name: deepseek_v3.2_ahc015
+  task_description: |
+    You are a world-class algorithm engineer, and you are very good at programming. Now, you are participating in a programming contest. 
+    You are asked to solve a heuristic problem, known as an NP-hard problem.
+    The problem statement is given below. First, please analyze the problem statement. Please think about the essential points of the problem and possible algorithms to get a higher rank in the contest.
+    Next, please implement your solution in C++17. You can use external libraries as follows gcc version 9.4.0, Boost version 1.71.0.0ubuntu2, GMP version 2:6.2.0+dfsg-4ubuntu0.1, Eig version 3.3.7-2.
+    
+    Problem Statement
+    Execution time limit 2.0 sec and Memory limit 1073741824 MB 
+
+    Story
+    --------
+    AtCoder's CEO Takahashi prepares for Halloween tomorrow.
+    At AtCoder's Halloween party, Takahashi will dress up in disguise and receive a piece of candy from 100 employees in turn by saying, "trick or treat!"
+    He prepares a square box that can contain $10\times 10$ pieces of candy in a grid pattern, and each employee puts a piece of candy in an empty space so that no candies overlap.
+    There are $3$ types of candies: strawberry, watermelon, and pumpkin flavors.
+    He knows which flavor of candy each employee will put in by preliminary survey, but he doesn't know where each employee will put it.
+    Since he is a clean freak, he will move the pieces of candy by tilting the box forward, backward, left, or right, just once for each piece of candy received, and eventually wants to make sure that the same type of candy is clustered together as much as possible.
+    Please help him by writing a program to determine the direction to tilt.
+
+    <figure>
+      <img src="./images/b639c75d_1.gif">
+      <figcaption>Example for $5\times 5$</figcaption>
+    </figure>
+
+
+    Problem Statement
+    --------
+    There is a box that can contain $10\times 10$ pieces of candy in a grid pattern.
+    The box is initially empty, and $100$ pieces of candy will be placed in order.
+    There are $3$ flavors of candy, and we know in advance the flavor $f_t (1\leq f_t\leq 3)$ of the $t$-th candy.
+    On the other hand, we do not know in advance to which cell each candy will be placed, and it will be chosen uniformly at random among the empty cells.
+    You cannot change the order in which the pieces of candy are received.
+
+    Each time you receive one piece of candy, you must tilt the box forward, backward, left, or right exactly once.
+    When you tilt the box, each piece of candy moves in that direction simultaneously until it reaches the edge or hits another candy.
+    For example, if you tilt the box forward in the state shown in the left figure, the box will be in the state shown in the right figure.
+
+    ![](./images/b639c75d_2.png)
+    ![](./images/b639c75d_3.png)
+
+    Scoring
+    --------
+    We define the connectivity of pieces of candy as follows and consider the connected components.
+    > Two pieces of candy are connected if and only if they are of the same flavor and can reach each other through only pieces of candy of the same flavor in the four directions (front, back, left, right).
+
+    For example, the state in the figure below consists of $7$ connected components of size $\\{1, 1, 2, 2, 4, 6, 9\\}$.
+
+    ![](./images/b639c75d_4.png)
+
+    Let $n_1,\cdots,n_k$ be the list of sizes of connected components in the final state after receiving 100 pieces of candy, and let $d_i$ be the total number of pieces of candy of flavor $i$.
+    Then the score for the test case is
+
+    \\[\mathrm{round}\left(10^6\times\frac{\sum_{i=1}^k n_i^2}{\sum_{i=1}^3 d_i^2}\right)\\]
+
+    Your task is to write a program to determine the tilting directions so that you can get as high a score as possible.
+
+    There are 200 test cases, and the score of a submission is the total score for each test case.
+    If your submission produces an illegal output or exceeds the time limit for some test cases, the submission itself will be judged as <span class='label label-warning' data-toggle='tooltip' data-placement='top' title="Wrong Answer">WA</span> or <span class='label label-warning' data-toggle='tooltip' data-placement='top' title="Time Limit Exceeded">TLE</span> , and the score of the submission will be zero.
+    The highest score obtained during the contest will determine the final ranking, and there will be no system test after the contest.
+    If more than one participant gets the same score, they will be ranked in the same place regardless of the submission time (note that this is changed from previous short-term AHCs).
+
+
+    Input and Output
+    --------
+    First, the flavor of each piece of candy is given from Standard Input in the following format.
+    ~~~
+    $f_1$ $f_2$ $\cdots$ $f_{100}$
+    ~~~
+
+    Each $f_t$ is an integer value between $1$ and $3$, representing the flavor of the $t$-th piece of candy.
+
+    After reading the above information, repeat the following process $100$ times.
+
+    In the $t$-th process ($1\leq t\leq 100$), a single integer $p_t$ between $1$ and $101-t$ is given from Standard Input.
+    Let us number the empty cells from $1$ to $101-t$ in front-to-back and left-to-right priority, as shown in the example figure below.
+    Then the $t$-th piece of candy is placed in the $p_t$-th empty cell.
+
+    ![](./images/b639c75d_5.png)
+
+    After reading $p_t$, by representing forward, backward, left, and right by `F`, `B`, `L`, and `R`, respectively, output a single character to Standard Output to indicate which direction to tilt the box.
+
+    <font color="red">**The output must be followed by a new line, and you have to flush Standard Output.**</font>
+    Otherwise, the submission might be judged as <span class='label label-warning' data-toggle='tooltip' data-placement='top' title="Time Limit Exceeded">TLE</span>.
+    <font color="red">**Note that $p_{t+1}$ will not be given until you output the $t$-th direction.**</font>
+    Since nothing happens at the 100th tilt, you may skip the output.
+
+    #### Example
+
+    <table class="table table-bordered">
+    <thead>
+    <tr>
+    <th>$t$</th>
+    <th>Input</th>
+    <th>Output</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr>
+    <td>Prior information</td>
+    <td><pre>2 2 1 3 1 2 1 2 1 $\cdots$ 3</pre></td>
+    <td></td>
+    </tr>
+    <tr>
+    <td>1</td>
+    <td><pre>3</pre></td>
+    <td><pre>R</pre></td>
+    </tr>
+    <tr>
+    <td>2</td>
+    <td><pre>98</pre></td>
+    <td><pre>B</pre></td>
+    </tr>
+    <tr>
+    <td>$\vdots$</td>
+    <td></td>
+    <td></td>
+    </tr>
+    <tr>
+    <td>100</td>
+    <td><pre>1</pre></td>
+    <td><pre>L</pre></td>
+    </tr>
+    </tbody>
+    </table>
+
+
+    <a href="https://img.atcoder.jp/ahc015/b639c75d.html?lang=en&seed=0&output=R%0D%0AB%0D%0AB%0D%0AR%0D%0AF%0D%0AR%0D%0AF%0D%0AR%0D%0AR%0D%0AF%0D%0AB%0D%0AL%0D%0AB%0D%0AL%0D%0AF%0D%0AF%0D%0AB%0D%0AF%0D%0AB%0D%0AL%0D%0AL%0D%0AL%0D%0AL%0D%0AB%0D%0AF%0D%0AF%0D%0AR%0D%0AR%0D%0AF%0D%0AL%0D%0AL%0D%0AB%0D%0AL%0D%0AL%0D%0AL%0D%0AB%0D%0AL%0D%0AR%0D%0AF%0D%0AL%0D%0AB%0D%0AL%0D%0AF%0D%0AF%0D%0AF%0D%0AL%0D%0AL%0D%0AR%0D%0AB%0D%0AB%0D%0AF%0D%0AL%0D%0AF%0D%0AR%0D%0AB%0D%0AL%0D%0AF%0D%0AF%0D%0AR%0D%0AL%0D%0AR%0D%0AL%0D%0AR%0D%0AR%0D%0AB%0D%0AR%0D%0AB%0D%0AR%0D%0AR%0D%0AF%0D%0AB%0D%0AF%0D%0AR%0D%0AR%0D%0AF%0D%0AB%0D%0AF%0D%0AB%0D%0AF%0D%0AR%0D%0AB%0D%0AF%0D%0AF%0D%0AF%0D%0AB%0D%0AB%0D%0AL%0D%0AL%0D%0AR%0D%0AF%0D%0AB%0D%0AL%0D%0AB%0D%0AF%0D%0AB%0D%0AR%0D%0AF%0D%0AF%0D%0AL%0D%0AL%0D%0A">Show example</a>
+    
+    Metric definition
+    score_list: the score of the solution on each individual test cases
+    score: the overall score on all test cases
+    combined_score: the aggregated score that you need to improve
+    
+    Goal
+    maximize the score of your solution so that you can improve your combined_score. 
+
+
+    Here, We provide some improvement guidance which may help improve your algorithm.
+    Speedup Tips:
+    Based on the code and feedback: What are the key algorithms and data structures used? What are its computational complexity bottlenecks (consider feedback
+    like Time Limit Exceeded)? How might we improve the time or space complexity (consider feedback like Memory Limit Exceeded)? Consider both small
+    optimizations and completely different approaches. You don't need to implement the solution yet. Instead, please think deeply and broadly about
+    the possible improvements, and explain your thoughts.
+    Simulated Annealing State Improvement Tips:
+    If this solution uses simulated annealing, analyze the problem, solution properties, and feedback to suggest better state representation. Consider how
+    the current state encoding might be limiting the search space or convergence speed, especially in light of the feedback. Think about alternative state
+    encodings that could lead to better local optima or faster convergence. You don't need to implement the solution yet. Instead, please think deeply and
+    broadly about the possible improvements, and explain your thoughts.
+    Simulated Annealing Neighbor Improvement Tips:
+    If this solution uses simulated annealing, analyze the problem, solution properties, and feedback to suggest better neighborhood design. Consider how
+    the current neighborhood structure might be limiting the search space  exploration or convergence speed, based on the feedback. Think about
+    alternative neighborhood structures that could lead to better local optima or faster convergence. Specifically, consider:
+    1. How to balance between small and large moves in the search space
+    2. How to ensure the neighborhood structure allows reaching any valid solution
+    3. How to design moves that maintain solution feasibility while exploring new regions
+    You don't need to implement the solution yet. Instead, please think deeply and broadly about the possible improvements, and explain your thoughts.
+    Beam Search Improvement Tips:
+    Consider implementing or improving a beam search approach. Think about the beam width and evaluation function that could lead to better solutions. Consider
+    how to effectively balance between diversity and quality in your beam. You don't need to implement the solution yet. Instead, please think deeply and
+    broadly about the possible improvements, and explain your thoughts.
+
+    Focus on breaking through the plateau by trying fundamentally different approaches or combining different approches - don't just tweak parameters.
+
+  language: cpp
+  strategy: adaptive_cluster  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 100
+  max_workers: 4
+  checkpoint_interval: 10
+  seed: 42
+
+  # Experience system
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+    l1_trigger: interval
+    l1_interval: 10
+
+  # Debug loop (auto-injected by Evolver into code-producing rollouts)
+  debug:
+    enabled: true
+    max_iterations: 3
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 60
+    migration_interval: 1000000
+    migration_size: 5
+    migration_topology: ring
+    reset_interval: 1000000
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    # Exec LLM (main evolution rollouts)
+    api_base: your_url
+    model: model_name
+    api_key: your_key  # fill with your key
+    temperature: 0.7
+    max_tokens: 16000
+    timeout: 3600
+
+  embedding:
+    provider: openai
+    model: model_name
+    api_base: your_url
+    api_key: your_key
+
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: /mnt/cfs_bj_mt/workspace/gezengle/workspace/famou-v2/baidu/acg-fm/famou-v2/famou_data/ale_bench
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 3600

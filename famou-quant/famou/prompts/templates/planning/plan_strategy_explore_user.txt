@@ -1,0 +1,25 @@
+<task>
+{{ task_description }}
+</task>
+
+<anchor_program_result>
+{{ anchor_program_summary_json }}
+</anchor_program_result>
+
+<reference_plan_results>
+{{ reference_plan_summaries_json }}
+</reference_plan_results>
+
+Produce the next plan for the coming rollouts.
+
+Requirements:
+- Write one explicit plan as 2-4 concrete steps.
+- The plan must clearly describe:
+  - what to preserve
+  - what to change next
+  - what metrics or failure modes to watch
+- Use the structured summaries above to decide the next direction.
+- Explore a plan direction that is clearly different from previous plans.
+- Avoid small local tweaks that stay in the same basin.
+- Try a meaningfully differentiated approach to find a better solution.
+- Avoid repeating a prior weak plan unless you are making a materially different adjustment and the plan text clearly reflects that difference.

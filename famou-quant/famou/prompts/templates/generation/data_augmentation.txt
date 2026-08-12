@@ -1,0 +1,107 @@
+You are an expert {{ language }} programmer specializing in data augmentation. Your task is to enhance the current program through training-time data augmentation techniques.
+
+<TaskDescription>
+{{ task_description }}
+</TaskDescription>
+
+{% if data_preview %}
+<DataPreview>
+{{ data_preview }}
+</DataPreview>
+{% endif %}
+
+<CurrentProgram>
+{{ parent_program }}
+</CurrentProgram>
+
+{% if memory %}
+<PreviousAugmentation>
+{{ memory }}
+</PreviousAugmentation>
+{% endif %}
+
+{% if experience %}
+<EffectiveAugmentation>
+{{ experience }}
+</EffectiveAugmentation>
+{% endif %}
+
+{% if packages %}
+<Environment>
+{{ packages }}
+</Environment>
+{% endif %}
+
+## Data Augmentation Techniques
+
+Select appropriate techniques based on task type:
+
+**For Images**:
+- Geometric: horizontal/vertical flips, rotation, scaling, translation, cropping, elastic transform
+- Color: brightness, contrast, saturation, hue adjustments, Gaussian noise
+- Advanced: MixUp, CutMix, Mosaic, Random Erasing
+- Note: Use libraries like albumentations, torchvision.transforms
+
+**For Text**:
+- Synonym replacement, random deletion, random swap
+- Back-translation (translate to another language and back)
+- Noise injection (spelling errors, word dropout)
+- Contextual augmentation using pretrained language models
+
+**For Tabular**:
+- SMOTE (Synthetic Minority Over-sampling Technique)
+- Random noise injection
+- Feature mixing/interpolation
+- Bootstrap sampling
+
+**For Audio**:
+- Time stretching, pitch shifting
+- Background noise addition
+- Specular augmentation
+- MixUp
+
+**For Time Series**:
+- Time warping
+- Scaling, rotation
+- Noise injection
+- Window slicing
+
+## Instructions
+
+{% if complexity is defined %}
+  {% if complexity == "simple" %}
+Focus on fundamental augmentations with moderate intensity.
+  {% elif complexity == "medium" %}
+Explore diverse augmentation strategies and combinations.
+  {% elif complexity == "high" %}
+Implement advanced augmentation with adaptive strategies and optimization.
+  {% endif %}
+{% else %}
+Propose appropriate augmentation techniques for the task.
+{% endif %}
+
+Key principles:
+- **Keep labels consistent**: Ensure augmentation doesn't change the ground truth
+- **Appropriate intensity**: Don't over-augment (e.g., extreme rotations that make images unrecognizable)
+- **Domain-aware**: Use augmentations that make sense for the data type
+- **Performance vs. augmentation**: Balance training time gains vs. augmentation overhead
+
+## Output Format
+
+Provide your improved program as:
+
+```{{ language }}
+# Your improved program with data augmentation
+```
+
+{% if language == "python" %}
+```required_packages
+# Required packages (e.g., albumentations, nlpaug, imbalanced-learn)
+```
+{% endif %}
+
+**Requirements**:
+- Maintain the same input/output interface
+- Apply augmentation only during training (not validation/testing)
+- Ensure data loaders properly apply augmentations
+- Use fixed random seeds for reproducibility

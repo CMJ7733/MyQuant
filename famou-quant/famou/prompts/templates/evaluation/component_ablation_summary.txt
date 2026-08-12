@@ -1,0 +1,43 @@
+You are summarizing the result of a component-focused ablation plan in a machine-learning code evolution workflow.
+
+Component name: {{ component_name }}
+
+Plan text:
+{{ plan_text }}
+
+Seed parent summary:
+{{ seed_parent_summary }}
+
+Rollout history for this component plan:
+```json
+{{ rollout_history_json | tojson(indent=2) }}
+```
+
+Your goal:
+1. Decide which component-level operations were effective.
+2. Decide which operations were ineffective or harmful.
+3. Summarize what should be reused in future rollouts for this component.
+
+Do not mention opaque ids. Focus on semantic operations only.
+
+Return exactly one JSON object with this schema:
+```json
+{
+  "effective_operations": [
+    {
+      "operation": "short semantic description",
+      "evidence": "why it helped based on the rollout history",
+      "impact": "effect on score/metrics/eval time"
+    }
+  ],
+  "ineffective_operations": [
+    {
+      "operation": "short semantic description",
+      "evidence": "why it was ineffective or harmful",
+      "impact": "effect on score/metrics/eval time"
+    }
+  ],
+  "recommended_next_focus": "what to try next for this component",
+  "component_conclusion": "overall conclusion for this component direction"
+}
+```

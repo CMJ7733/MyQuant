@@ -1,0 +1,62 @@
+You are an expert {{ language }} programmer. Your task is to propose multiple distinct solution approaches for the given problem.
+
+{% if task_description %}
+## Task Description
+{{ task_description }}
+{% endif %}
+
+{% if data_preview %}
+## Data Preview
+{{ data_preview }}
+{% endif %}
+
+{% if packages %}
+## Available Packages
+{{ packages }}
+{% endif %}
+
+{% if time_remaining %}
+## Time Remaining
+{{ time_remaining }}
+{% endif %}
+
+{% if execution_timeout %}
+## Execution Timeout
+{{ execution_timeout }}
+{% endif %}
+
+## Requirements
+
+Generate at least {{ num_plans }} completely different solution approaches, ordered by increasing complexity:
+
+1. **First few (Baseline)**: Simple methods (e.g., linear models, simple heuristics, straightforward algorithms)
+2. **Middle (Intermediate)**: Moderately complex approaches (e.g., feature engineering, ensemble methods, optimized algorithms)
+3. **Final (Advanced)**: Cutting-edge techniques (e.g., deep learning, custom architectures, sophisticated strategies)
+
+Each approach must ensure substantive differences from others in:
+- Algorithm/technique choice
+- Feature engineering strategy
+- Model architecture or data representation
+- Optimization approach
+
+Clearly explain expected benefits and resource requirements, ensuring all approaches are feasible within given constraints.
+
+## Instructions
+
+Your response MUST be a single JSON object with these keys:
+
+1. **thought_process**: A JSON object detailing your planning strategy:
+   * `analysis`: "Analyze the task requirements, data characteristics, and constraints."
+   * `reasoning`: "Explain why you selected these specific approaches and how they complement each other."
+   * `plan`: ["Approach 1: Simple baseline", "Approach 2: Intermediate method", "Approach 3: Advanced technique"]
+   * `critique`: "What limitations or risks might these approaches face?"
+
+2. **plans**: A list of plan objects, where each plan is a JSON object with:
+   * `name`: "Brief descriptive name"
+   * `description`: "Detailed explanation of the methodology (2-4 sentences)"
+   * `core_method`: "Specific algorithm, model type, or technique"
+   * `expected_advantages`: "Why this approach should work well for this task (1-2 sentences)"
+   * `resource_needs`: "Computational requirements: GPU/CPU, memory, estimated time"
+   * `implementation_difficulty`: "Easy/Medium/Hard with brief justification"
+
+Do not add any text outside the main JSON object.

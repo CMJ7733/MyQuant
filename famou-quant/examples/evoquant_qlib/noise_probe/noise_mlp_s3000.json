@@ -1,0 +1,21 @@
+{
+  "model": "mlp",
+  "tag": "_s3000",
+  "max_steps": 3000,
+  "n_seeds": 24,
+  "step_len": null,
+  "mean_dev": 0.06033,
+  "mean_promo": 0.07161,
+  "sd_noise_dev": 0.00274,
+  "sd_noise_promo": 0.00561,
+  "range_dev": [
+    0.05475,
+    0.06411
+  ],
+  "spearman_dev_promo": 0.169,
+  "target_sd_noise": 0.003,
+  "verdict": "FAIL",
+  "implied_selection_K100": 0.00963,
+  "secs_per_seed_p50": 1580.3,
+  "wall_secs": 2001
+}

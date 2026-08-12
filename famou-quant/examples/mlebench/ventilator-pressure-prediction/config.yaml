@@ -1,0 +1,254 @@
+# Circle Packing Experiment Configuration
+# Target: Maximize sum of radii for n=26 circles in unit square
+# AlphaEvolve benchmark result: 2.635
+
+# =============================================================================
+# Experiment Configuration - WHAT to optimize
+# =============================================================================
+experiment:
+  name: mlebench-ventilator-pressure-prediction
+  task_description: |
+    You are an experienced machine learning algorithm engineer with expertise in end-to-end system optimization, feature engineering, robust neural network design, and efficient model development using PyTorch.
+    Your current task is to design a machine learning/deep learning algorithm based on the requirements above. You have full freedom to redesign, enhance, or replace any of the following components:
+     - Data loading and preprocessing (including augmentation, normalization, etc.)
+     - Feature engineering or preprocessing (including selection, transformation, and normalization)
+     - Choose suitable state-of-the-art models tailored to the task characteristics.
+     - Integration of ML/DL algorithms (XGBoost, Random Forest, etc.)
+     - Neural network architecture (custom layers, activation functions, attention mechanisms, normalization, regularization, etc.)
+     - Training objectives (custom loss functions, auxiliary tasks, or multi-task learning)
+     - Regularization strategies (dropout, weight decay, label smoothing, etc.)
+     - Hyperparameter optimization (learning rate, schedulers, batch size, model depth/width, etc.)
+     - Cross-validation for hyperparameter tuning (searching for optimal hyperparameters on the training set via cross-validation, then training the final model on the validation set)
+     - Efficient training/inference pipelines (batching, data loading, distributed training, etc.)
+     - Numerical stability and reproducibility (any known techniques to improve performance or efficiency in this domain)
+     - ML tricks, Kaggle techniques, feature selection, feature engineering, model ensembling, etc.
+    You may combine multiple steps, design new functional pipelines, restructure model architectures, or adopt any standard or innovative ML methods (as long as implemented in Python).
+    **Imporatance Note**: When designing your solution, you should also take into account the timeframe in which the competition was held. Some competitions took place over ten years ago, when many of today's powerful models did not yet exist and deep learning itself was still in its early stages. In fact, you could even outperform others by combining straightforward machine learning approaches with well-chosen implementation tricks.
+
+    # Core Task Info
+    {
+      "Task Type": "Regression",
+      "Data Type": "Time Series",
+      "Brief Description": "This competition challenges participants to simulate a ventilator connected to a sedated patient's lung. The goal is to predict the airway pressure in the respiratory circuit based on a time series of control inputs and lung attributes. The aim is to leverage machine learning, particularly neural networks, to create models that can generalize across different lung characteristics, ultimately helping to reduce the cost and improve the development of mechanical ventilation control algorithms.",
+      "Dataset Description": "The dataset consists of time series data simulating breaths from a mechanical ventilator connected to an artificial lung. Each row represents a single time step within a breath. The data is split into three main files:\n\n- `train.csv`: The training set, containing 5,432,400 time steps. It includes the features and the target variable. The columns are `id` (time step identifier), `breath_id` (breath identifier), `R` (airway restriction), `C` (lung compliance), `time_step`, `u_in` (inspiratory valve control), `u_out` (expiratory valve control), and `pressure` (the target airway pressure).\n\n- `test.csv`: The test set, containing 603,600 time steps. It has the same structure and columns as `train.csv` but omits the `pressure` column, which needs to be predicted.\n\n- `sample_submission.csv`: A file demonstrating the required submission format, with columns `id` and `pressure`.",
+      "Submission Specifications": "For each `id` in the test set, you must predict a single continuous value for the `pressure` variable. The submission file must be a CSV file containing a header and two columns: `id` and `pressure`.",
+      "Submission channel number to each sample": 1,
+      "Metric Evaluation Description": "Submissions are evaluated using the mean absolute error (MAE) between the predicted and actual airway pressures. The scoring is calculated only on the time steps corresponding to the inspiratory phase of each breath; the expiratory phase is excluded from the evaluation. The score is the mean of the absolute differences between all predicted pressures and their corresponding actual values in the scored portion of the test set.",
+      "Metric Name": "Mean Absolute Error",
+      "Metric Direction": false,
+      "Longer time limit required": "True"
+    }
+
+    # Dataset
+
+    ## Data path:
+    /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/ventilator-pressure-prediction/prepared/public
+    
+    ## File tree:
+    ```
+    ./
+    ├── train.csv (299.7 MB)
+    ├── test.csv (25.5 MB)
+    ├── sample_submission.csv (5.3 MB)
+    ├── description.md (5.8 kB)```
+    
+
+    ## File details:
+    
+     (Showing details for representative files out of many)
+    
+    ### sample_submission.csv: 
+    #### 1.DataFrame preview:
+    It has 603600 rows and 2 columns.
+    Here is some information about the columns:
+    id (int64) has range: 1.00 - 603600.00, 0 nan values
+    pressure (int64) has 1 unique values: [0]
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+       id  pressure
+    0   1         0
+    1   2         0
+    2   3         0
+    
+    ### test.csv: 
+    #### 1.DataFrame preview:
+    It has 603600 rows and 7 columns.
+    Here is some information about the columns:
+    C (int64) has 3 unique values: [20, 50, 10]
+    R (int64) has 3 unique values: [50, 5, 20]
+    breath_id (int64) has range: 2.00 - 125726.00, 0 nan values
+    id (int64) has range: 1.00 - 603600.00, 0 nan values
+    time_step (float64) has range: 0.00 - 2.93, 0 nan values
+    u_in (float64) has range: 0.00 - 100.00, 0 nan values
+    u_out (int64) has 2 unique values: [0, 1]
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+       id  breath_id   R   C  time_step      u_in  u_out
+    0   1      44398  50  20   0.000000  0.133805      0
+    1   2      44398  50  20   0.031955  2.411108      0
+    2   3      44398  50  20   0.063910  4.484026      0
+    
+    ### train.csv: 
+    #### 1.DataFrame preview:
+    It has 5432400 rows and 8 columns.
+    Here is some information about the columns:
+    C (int64) has 3 unique values: [10, 20, 50]
+    R (int64) has 3 unique values: [5, 50, 20]
+    breath_id (int64) has range: 1.00 - 125749.00, 0 nan values
+    id (int64) has range: 1.00 - 5432400.00, 0 nan values
+    pressure (float64) has range: -1.90 - 64.82, 0 nan values
+    time_step (float64) has range: 0.00 - 2.94, 0 nan values
+    u_in (float64) has range: 0.00 - 100.00, 0 nan values
+    u_out (int64) has 2 unique values: [0, 1]
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+       id  breath_id  R   C  time_step      u_in  u_out  pressure
+    0   1      85053  5  10   0.000000  4.174419      0  6.118700
+    1   2      85053  5  10   0.033812  7.050149      0  5.907794
+    2   3      85053  5  10   0.067497  7.564931      0  7.313837
+
+    # Other Requirements
+     - Code Generation Requirements:
+        - Library Imports: All libraries must be imported at the beginning of the file. Implicit imports are prohibited.
+        - Feature Processing: Handle missing values and features conservatively. For uncertain feature types, first determine the type before selecting imputation and processing strategies.
+        - Computing resource: Provides sufficient CPU computing power and 1 A800 graphics cards, you can use them freely if necessary.
+        - CPU resources are relatively sufficient, so it is appropriate to run more workers during data processing and loading.
+        - Maximize GPU utilization and estimate a suitable batch size based on the number of model parameters.
+        - Try to use the latest models, which often bring better results. For example, efficient_net is often better than restnet, and the larger size of efficient_net, such as large, is also better than base.
+        - If you train a deep learning model, do not train for more than 10 epochs at the beginning. You can adjust it according to the results of the code execution. If it is underfitting, you can increase the epochs.
+        - For a deep learning task, predictions need to be made after each epoch of training and the corresponding submission_epoch.csv file needs to be generated. The storage path should remain consistent. For example, for a task that trains for 3 epochs, the first round of training predictions is saved as `submission_1.csv`, the second round of training predictions is saved as `submission_2.csv`, and so on...
+        - You need to save the trained model to the specified save address above. The model should be saved in the format of the `transformers` library. Furthermore, ensure that each epoch's model is saved in a folder following the naming convention `model_name_epoch`.
+        - If you intend to use certain models, you should use the name from Hugging Face rather than a local directory.
+        - Prioritize the `transformers` library over `timm` for all model loading operations.
+        - When a pre-trained model download from a remote repository like Hugging Face fails, attempt to use a different model rather than retrying the same one.
+        - **Do not use exception handling mechanisms in any data loading steps; expose potential issues instead, and never fabricate submission files.**
+        
+     - Code Style:
+        - Clear variable naming
+        - Optional type annotations
+        - Brief comments for key steps
+        - Print information about key steps instead of using tqdm to print the training process
+        - All variables and standard library functions must be defined before use
+        - Directly generate a complete, end-to-end CSV output
+        - Provide executable code that runs without errors and produces the **submission.csv** file as required
+        Suppress all warnings to avoid displaying warning messages
+    
+    ## Ultimate Goal
+      - Maximize your score in this task/competition and rank higher on the leaderboard. Apply a combination of techniques (machine learning knowledge and Kaggle competition tricks) to achieve this.
+    
+    ## Scheme Limitations
+      - Your proposed solutions must account for time constraints. The running time of any plan should not exceed 6 hours; otherwise, it will be difficult to complete execution smoothly.
+    
+    ## File Paths
+     - Submission file Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/ventilator-pressure-prediction/submission.csv
+     - Model Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/ventilator-pressure-prediction/model_save
+     - Read path: /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/ventilator-pressure-prediction/prepared/public/
+    
+  language: python
+  strategy: example_strategy  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 50
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 100
+    migration_interval: 5
+    migration_size: 1
+    migration_topology: ring
+    reset_interval: 15
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    api_base: http://211.23.3.237:27544/v1
+    model: gemini-3-pro-preview
+    api_key: YOUR_API_KEY  # Replace with your API key or use environment variable
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 3600
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 14400
+    # GPU Usage (Optional)
+    gpu_ids: [4]      # Available GPU IDs (empty list = no GPU)
+    gpu_num_each_run: 1.0      # Number of GPUs per evaluation task
+    input_params:
+      competition_name: ventilator-pressure-prediction
+  
+  # Monitoring Configuration (Optional)
+  monitor:
+    enabled: false  # Set to false to disable monitoring
+    type: wandb  # Monitoring backend type (currently only 'wandb' is supported)
+
+    # WandB-specific settings
+    wandb:
+      project: famou-mlebench  # WandB project name
+      entity: null  # WandB entity (username or team), null for default
+      run_name: null  # Run name, null for auto-generation
+      group: null  # Group name for grouping related runs
+      tags:
+        - mlebench
+        - creative_exploration
+      notes: "Circle packing optimization with creative exploration strategy"
+
+      # Async logging settings
+      async_mode: true  # Enable asynchronous (non-blocking) logging
+      num_workers: 4  # Number of async worker threads
+      queue_size: 100  # Max queue size for async logging
+
+      # What to monitor
+      track_metrics:
+        islands: true  # Track metrics for each island
+        performance: true  # Track performance metrics (best, avg, median scores)
+        population: true  # Track population metrics (size, generations)
+        diversity: true  # Track diversity metrics (genetic, code diversity)
+        cost: true  # Track LLM API costs
+      track_artifacts: true  # Track artifacts (best programs, visualizations)
+      track_lineage_tree: true  # Track lineage tree visualization
+      checkpoint_interval: 1  # Record metrics every N iterations
+
+  # langfuse configuration (optional)
+  # langfuse:
+  #   enabled: false  # Set to false to disable Langfuse integration
+  #   public_key: your_public_key
+  #   secret_key: your_secret_key
+  #   base_url: https://us.cloud.langfuse.com
+
+
+
+# =============================================================================
+# Module Parameters (optional) - ALGORITHM parameters
+# =============================================================================
+modules:
+  generate:
+    # Production canary for new generation protocol:
+    # - hybrid: XML-first + fenced/json fallback (recommended)
+    # - xml: strict XML-first
+    # - legacy_json: one-click rollback
+    output_protocol: hybrid

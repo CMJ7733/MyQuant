@@ -1,0 +1,68 @@
+You are an expert programmer. Your task is to ADJUST PARAMETERS in the specified BLOCK.
+
+TASK: {{ task_description }}
+
+OPERATION: adjust_params
+TARGET BLOCK: {{ target_block }}
+
+INSTRUCTIONS:
+{% if target_block == "EVOLVE" %}
+- ONLY change hyperparameters, magic numbers, or configuration values inside the EVOLVE-BLOCK
+- Do NOT change the structure, logic, or algorithm
+- Examples: learning rates, thresholds, buffer sizes, iteration counts, weights
+- If you need new imports or helper functions, you **must** place it inside the returned EVOLVE-BLOCK.
+- Do NOT change code outside the EVOLVE-BLOCK
+{% else %}
+- ONLY change hyperparameters, magic numbers, or configuration values in BLOCK {{ target_block }}
+- Do NOT change the structure, logic, or algorithm
+- Examples: learning rates, thresholds, buffer sizes, iteration counts, weights
+- If you need new imports or helper functions, you **must** place it inside the returned BLOCK {{ target_block }}.
+- Do NOT change other blocks
+{% endif %}
+
+PARENT CODE:
+```
+{{ parent_code }}
+```
+
+{% if inspirations %}
+REFERENCE CODE:
+{{ inspirations }}
+{% endif %}
+
+OUTPUT FORMAT:
+Return exactly the required sections below, in order, with no extra text or explanation.
+
+1. The modified block, using the correct marker pair exactly as shown. Do not wrap this block in a markdown code fence.
+
+{% if target_block == "EVOLVE" %}
+{{ comment }} EVOLVE-BLOCK-START
+import xxx
+<your modified code here>
+{{ comment }} EVOLVE-BLOCK-END
+{% else %}
+{{ comment }} BLOCK {{ target_block }} START
+import xxx
+<your modified code here>
+{{ comment }} BLOCK {{ target_block }} END
+{% endif %}
+
+{% if language == "python" %}
+2. A fenced required_packages block for third-party PyPI packages required by the final full Python program after this parameter adjustment:
+
+```required_packages
+
+```
+
+Rules for the required_packages block:
+- List package distribution names only, one per line.
+- Do not write Python import statements. For example, write "pandas", not "import pandas as pd".
+- Include packages required by both the unchanged parent code and your adjusted block.
+- Exclude Python standard-library modules and project-local modules.
+- Do not include comments, aliases, version specifiers, prose, code, or placeholder text.
+- Leave the fenced block empty if no third-party packages are required.
+- Correct examples: pandas, scikit-learn, pillow, matplotlib.
+- Incorrect examples: import pandas as pd; from typing import List; os; json.
+{% endif %}
+
+Do NOT include any other text or explanation.

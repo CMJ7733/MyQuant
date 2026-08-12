@@ -1,0 +1,6 @@
+protocol_a/mlruns/
+mlruns/
+__pycache__/
+*.pyc
+*.log
+mlruns/

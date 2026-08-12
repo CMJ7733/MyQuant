@@ -1,0 +1,25 @@
+--index-url https://pip.baidu-int.com/simple/
+--trusted-host pip.baidu.com
+hatchling>=1.18.0
+build>=1.0.3
+pytest
+mock
+
+
+pydantic>=2.0.0
+openai>=1.0.0
+pyyaml>=6.0
+tenacity>=8.0.0
+jinja2>=3.0.0
+numpy>=1.24.0
+langfuse==3.12.1
+cloudpickle
+ray==2.46.0
+semgrep
+famou-sdk
+fastapi
+google-genai
+scipy
+TA-Lib
+
+-e .

@@ -1,0 +1,106 @@
+# Protocol B — Reliable Evolution Protocol 四段切分（**v2**）
+#
+# 版本: 2, 冻结日期: 2026-08-12
+# 变更原因（**与实验结果无关，须逐字保留**）:
+#   回应 leakage-free / forward-test 评测规范（DeepFund arXiv 2505.11065《Time Travel is Cheating》：
+#   历史回测使 LLM "time travel"，因预训练语料已含该段行情）。v1 快照日历止于 2020-09-25，
+#   **全部 episode 落在所有主流 LLM 知识截止日之前**（DeepSeek-R1 2023-12 / GPT-4o 2024-06），
+#   无法提供任何 post-cutoff 验证；同期 AlphaBench (ICLR 2026) 数据覆盖到 2025。
+#   本次更换数据快照以取得 post-cutoff episode，**不是因为 v1 上的任何实验结果**。
+#
+# ⚠️ v1 **不作废、不删除**（见 splits.yaml）。v1 上已完成的实验（power_study / exp1_phenomenon /
+#   noise_probe / exp2_sequential）继续以 v1 口径报告；v2 用于 post-cutoff 与扩展 episode。
+#   两版结果**不得混排在同一张表内**（数据源不同、特征集不同，见下 known_differences）。
+#
+# 冻结纪律（同 v1）: 本文件一经 commit，日期与规则不得因任何实验结果而修改。
+
+meta:
+  version: 2
+  frozen_on: "2026-08-12"
+  supersedes: null            # 不取代 v1；两版并存，用途不同
+  data_snapshot: "chenditc/investment_data release 2026-08-10（qlib bin 格式）"
+  data_url: "https://github.com/chenditc/investment_data/releases/download/2026-08-10/qlib_bin.tar.gz"
+  data_sha256: "b502e23852ea5893aec5f434e7467aac87d001e907aa80640988a824d729988d"   # 已逐位校验
+  data_manifest:
+    release_tag: "2026-08-10"
+    target_trade_date: "2026-08-10"
+    dolt_commit: "na7hu50nvtmenshv6uop37etfu015rqe"
+    investment_data_commit: "763d89573f21b04259652818b25930e32319ee33"
+  provider_uri: "/root/.qlib/qlib_data/cn_data_20260810"
+  calendar: "2000-01-04 ~ 2026-08-10, 6446 交易日"
+  qlib_commit: "79633dd9506ea689e5400dea0197717b5b3d74b7"   # 同 v1，未变
+  market: csi300
+  benchmark: SH000300
+
+# v1 → v2 的已知差异（论文必须披露；**这是两版结果不可混排的原因**）
+known_differences:
+  data_source: >-
+    v1 = qlib 社区 cn_data 快照（日历 1999-11-10 ~ 2020-09-25）；
+    v2 = chenditc/investment_data（日历 2000-01-04 ~ 2026-08-10）。**不同数据源，非同一数据的延长**。
+  vwap_field: >-
+    v1 快照**缺 vwap 字段** → Alpha158 的 VWAP0 整列 NaN（缺失率 1.0000），
+    实际进入模型的是 157 个有效特征；v2 有 vwap，VWAP0 缺失率 0.0015。
+    → **v2 的特征集与 v1 不同**，绝对指标不可直接比较。
+  extra_fields: "v2 另有 amount / adjclose，v1 无。当前 Alpha158 配置未使用，记录备查。"
+  verification: "verify_v2_data.py 四项检查全过（2026-08-12）：日历 / Alpha158 无全 NaN 列 / csi300 成分 300 只 @2019·2025·2026 / 分段交易日数。"
+
+# 以下三节与 v1 **逐字相同**（label / embargo / preprocessing / access_policy 未变）
+label:
+  expression: "Ref($close, -2) / Ref($close, -1) - 1"
+  norm: CSZScoreNorm
+  forward_depth_days: 2
+
+embargo:
+  rule: "embargo = label.forward_depth_days（推导值，非自由参数）"
+  days: 2
+  implementation: >-
+    尾部修剪(purging): 每段的样本区间在段末截去 embargo.days 个交易日，
+    使任一样本的标签窗口不越过本段日历边界。四段统一适用。
+    特征回看跨段属向后引用，不是泄漏，段首不修剪。
+
+preprocessing:
+  rule: >-
+    一切预处理统计量仅在本 episode 的 train 段拟合，
+    即 fit_start_time/fit_end_time 恒等于 train 段起止。
+
+access_policy:
+  train: "候选代码自由使用"
+  visible_dev: "agent 可反复评估；反馈经受限化后返回，由 visible evaluator 实施"
+  sealed_promotion: "仅 sealed evaluator 进程可读；对外只返回离散 verdict；逐日序列不出该进程"
+  final_test: "方法与搜索全部冻结前，任何进程不得读取；每个评估 episode 的 final_test 仅评估一次"
+
+# 段长与 v1 相同: train 6y / visible_dev 1y / sealed_promotion 1y / final_test 1y, 滚动步长 1y。
+# dev 取 1 年仍是设计决定，冻结后不因结果调整（v1 已定，v2 不改 —— 避免"看到 W 扫描效应后缩短 dev 窗"）。
+#
+# ⚠️ E1 在 v1 中角色为 development（final_test 已被反复查看 → 作废）。
+#   v2 沿用该判定：E1 仍为 development，永不进论文主结果。
+episodes:
+  E1:  {role: development, train: ["2008-01-01","2013-12-31"], visible_dev: ["2014-01-01","2014-12-31"], sealed_promotion: ["2015-01-01","2015-12-31"], final_test: ["2016-01-01","2016-12-31"]}
+  E2:  {role: evaluation,  train: ["2009-01-01","2014-12-31"], visible_dev: ["2015-01-01","2015-12-31"], sealed_promotion: ["2016-01-01","2016-12-31"], final_test: ["2017-01-01","2017-12-31"]}
+  E3:  {role: evaluation,  train: ["2010-01-01","2015-12-31"], visible_dev: ["2016-01-01","2016-12-31"], sealed_promotion: ["2017-01-01","2017-12-31"], final_test: ["2018-01-01","2018-12-31"]}
+  E4:  {role: evaluation,  train: ["2011-01-01","2016-12-31"], visible_dev: ["2017-01-01","2017-12-31"], sealed_promotion: ["2018-01-01","2018-12-31"], final_test: ["2019-01-01","2019-12-31"]}
+  E5:  {role: evaluation,  train: ["2012-01-01","2017-12-31"], visible_dev: ["2018-01-01","2018-12-31"], sealed_promotion: ["2019-01-01","2019-12-31"], final_test: ["2020-01-01","2020-12-31"]}
+  E6:  {role: evaluation,  train: ["2013-01-01","2018-12-31"], visible_dev: ["2019-01-01","2019-12-31"], sealed_promotion: ["2020-01-01","2020-12-31"], final_test: ["2021-01-01","2021-12-31"]}
+  E7:  {role: evaluation,  train: ["2014-01-01","2019-12-31"], visible_dev: ["2020-01-01","2020-12-31"], sealed_promotion: ["2021-01-01","2021-12-31"], final_test: ["2022-01-01","2022-12-31"]}
+  E8:  {role: evaluation,  train: ["2015-01-01","2020-12-31"], visible_dev: ["2021-01-01","2021-12-31"], sealed_promotion: ["2022-01-01","2022-12-31"], final_test: ["2023-01-01","2023-12-31"]}
+  E9:  {role: evaluation,  train: ["2016-01-01","2021-12-31"], visible_dev: ["2022-01-01","2022-12-31"], sealed_promotion: ["2023-01-01","2023-12-31"], final_test: ["2024-01-01","2024-12-31"]}
+  E10: {role: evaluation,  train: ["2017-01-01","2022-12-31"], visible_dev: ["2023-01-01","2023-12-31"], sealed_promotion: ["2024-01-01","2024-12-31"], final_test: ["2025-01-01","2025-12-31"]}
+  E11:
+    role: evaluation_post_cutoff       # **唯一的 post-cutoff episode**
+    train:            ["2018-01-01","2023-12-31"]
+    visible_dev:      ["2024-01-01","2024-12-31"]
+    sealed_promotion: ["2025-01-01","2025-12-31"]   # 晚于 GPT-4o(2024-06) 与 DeepSeek-R1(2023-12)
+    final_test:       ["2026-01-01","2026-08-10"]   # 数据末端截断, **145 交易日**, 论文披露
+
+# 各段实测交易日数（verify_v2_data.py, 2026-08-12）:
+#   E1-E10: train 1456-1464 / dev 242-245 / promo 242-244 / final_test 242-244
+#   E11:    train 1457 / dev 242 / promo 243 / final_test **145**（末端截断）
+segment_day_counts_verified_on: "2026-08-12"
+
+post_cutoff:
+  reference_cutoffs: {deepseek_r1: "2023-12", gpt_4o: "2024-06"}
+  qualifying_episodes: ["E11"]
+  caveat: >-
+    仅 E11 的评估段完全晚于主流 LLM 知识截止日，且其 final_test 只有 145 个交易日。
+    单个 post-cutoff episode **不足以支撑"leakage-free"的一般性声称**，
+    只能作为一次前瞻性检验报告。论文不得据此声称已消除泄漏风险。

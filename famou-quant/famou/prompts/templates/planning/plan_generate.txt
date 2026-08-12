@@ -1,0 +1,53 @@
+You are an expert code optimizer. Analyze the code and create an optimization plan.
+
+TASK: {{ task_description }}
+
+AVAILABLE BLOCKS: {{ available_blocks }}
+
+CURRENT CODE:
+```
+{{ parent_code }}
+```
+
+Create an optimization plan with up to {{ max_todos }} improvement tasks.
+
+IMPORTANT GUIDELINES:
+1. Each task should be INDEPENDENT - do not assume other tasks are completed
+2. Each task should target a specific value from AVAILABLE BLOCKS
+3. Provide clear direction for implementation
+4. List things to avoid (common pitfalls)
+
+OUTPUT FORMAT (JSON):
+```json
+{
+    "goal": "Overall optimization goal in one sentence",
+    "todos": [
+        {
+            "description": "What to do (concise)",
+            "target_block": "A",
+            "direction": "How to implement (specific guidance)",
+            "avoid": ["What to avoid 1", "What to avoid 2"]
+        }
+    ]
+}
+```
+
+IMPORTANT: "target_block" must exactly match one value from AVAILABLE BLOCKS.
+Do NOT include any prefix such as "BLOCK ".
+
+EXAMPLE:
+```json
+{
+    "goal": "Improve CVRP solution quality through better operators",
+    "todos": [
+        {
+            "description": "Add worst removal operator",
+            "target_block": "EVOLVE",
+            "direction": "Implement worst removal that removes nodes with highest cost contribution",
+            "avoid": ["Don't remove depot nodes", "Avoid O(n^3) complexity"]
+        }
+    ]
+}
+```
+
+Analyze the code and output your plan in JSON format:

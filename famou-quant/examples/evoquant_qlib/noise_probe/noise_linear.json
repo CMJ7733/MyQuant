@@ -1,0 +1,19 @@
+{
+  "model": "linear",
+  "n_seeds": 4,
+  "step_len": null,
+  "mean_dev": 0.05053,
+  "mean_promo": 0.07528,
+  "sd_noise_dev": 0.0,
+  "sd_noise_promo": 0.0,
+  "range_dev": [
+    0.05053,
+    0.05053
+  ],
+  "spearman_dev_promo": NaN,
+  "target_sd_noise": 0.003,
+  "verdict": "FAIL",
+  "implied_selection_K100": 0.0,
+  "secs_per_seed_p50": 22.5,
+  "wall_secs": 114
+}

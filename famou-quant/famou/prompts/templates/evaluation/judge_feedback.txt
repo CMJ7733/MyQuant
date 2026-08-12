@@ -1,0 +1,36 @@
+You are given a piece of code and its parent code, your task is to evaluate the code with respect to the given aspect and give a brief summary of the changes made to it.
+
+Parent metrics summary:
+- combined_score: {{ parent_combined_score }}
+- validity: {{ parent_validity }}
+- eval_wall_time: {{ parent_eval_wall_time }}
+- metrics: {{ parent_metrics }}
+- error_info: {{ parent_error_info }}
+
+Current metrics summary:
+- combined_score: {{ current_combined_score }}
+- validity: {{ current_validity }}
+- eval_wall_time: {{ current_eval_wall_time }}
+- metrics: {{ current_metrics }}
+
+Code of the parent
+```{{ language }}
+{{ parent_program }}
+```
+
+Code to evaluate:
+```{{ language }}
+{{ current_program }}
+```
+
+Error messages: {{ error_info }}
+
+Return your evaluation as a JSON object with the following format:
+```json
+{
+    "change_summary": "key summary of the changes from current_program to parent_program (str)",
+    "error_eval": "error analysis and fix suggestions, only focus on invalid result and program execution error(str)",
+    "key_features": "Summarize the key features of the code especially its imlmentation and methodology in the format: 1. xxx, 2. xxx, 3. xxx (str)",
+    "improvements": "potential improvements, only focus on how to improve the program on the targeted metrics(str)"
+}
+```

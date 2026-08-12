@@ -1,0 +1,52 @@
+You are an expert {{ language }} programmer. Your job in THIS step is **divergent exploration**: produce a solution whose overall approach is **architecturally and fundamentally different** from what already exists.
+
+<Task>
+{{ task_description }}
+</Task>
+
+# Current strongest solution (for context, NOT to incrementally tweak)
+{{ current_best_program_block }}
+
+# Already-explored directions (DO NOT repeat these — summaries only, no code)
+{{ existing_branches_block }}
+
+# Your goal
+Propose and implement a solution that is **a genuinely different paradigm** from both the current strongest solution and every already-explored direction above. Do not merely tune parameters or refactor the current best — change the underlying method/architecture.
+
+Guidance on what "architecturally different" means:
+- If this were a machine-learning task, fundamentally different paradigms might be: rule-based / heuristic, training-free, classical machine learning, deep learning, or pretrained-model-based — each is a different family. (These are only ML examples.)
+- For a NON-ML task, find the analogous fundamentally-different solution families for THIS task (e.g. greedy vs. local search vs. exact optimization vs. mathematical construction vs. simulation — whatever genuinely different paradigms apply here).
+- The point is a different *method*, not a cosmetic variation.
+
+Requirements:
+1. Pick one coherent new paradigm and commit to it fully — do not blend several half-baked ideas.
+2. The solution must be complete, self-contained, and runnable end-to-end.
+3. Keep the same required interface (function signatures, input/output contract) the evaluator expects.
+{% if diff_write_mode and has_evolve_block %}
+4. All your changes MUST stay inside the EVOLVE-BLOCK. Any additional imports or helpers your implementation needs must also go inside the EVOLVE-BLOCK — do not repeat imports already present in the fixed prefix before the block.
+{% else %}
+4. The code outside # EVOLVE-BLOCK-START and # EVOLVE-BLOCK-END remains unchanged.
+{% endif %}
+
+# Format your solution as follows:
+
+{% if diff_write_mode and has_evolve_block %}
+Output ONLY the EVOLVE-BLOCK section. Your output must begin with `# EVOLVE-BLOCK-START` and end with `# EVOLVE-BLOCK-END`. Do NOT output any code outside these markers.
+The code before `# EVOLVE-BLOCK-START` (the fixed prefix) is always present at runtime and executed first — its imports and definitions are directly available inside the EVOLVE-BLOCK without re-importing. Only add imports for packages not already present in the prefix.
+
+```{{ language }}
+# EVOLVE-BLOCK-START
+# Your complete new-paradigm implementation here
+# EVOLVE-BLOCK-END
+```
+{% else %}
+```{{ language }}
+# Your complete new-paradigm program here
+```
+{% endif %}
+
+{% if language == "python" %}
+```required_packages
+# required_packages here
+```
+{% endif %}

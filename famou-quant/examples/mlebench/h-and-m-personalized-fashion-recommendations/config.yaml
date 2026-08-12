@@ -1,0 +1,343 @@
+# Circle Packing Experiment Configuration
+# Target: Maximize sum of radii for n=26 circles in unit square
+# AlphaEvolve benchmark result: 2.635
+
+# =============================================================================
+# Experiment Configuration - WHAT to optimize
+# =============================================================================
+experiment:
+  name: mlebench-h-and-m-personalized-fashion-recommendations
+  task_description: |
+    You are an experienced machine learning algorithm engineer with expertise in end-to-end system optimization, feature engineering, robust neural network design, and efficient model development using PyTorch.
+    Your current task is to design a machine learning/deep learning algorithm based on the requirements above. You have full freedom to redesign, enhance, or replace any of the following components:
+     - Data loading and preprocessing (including augmentation, normalization, etc.)
+     - Feature engineering or preprocessing (including selection, transformation, and normalization)
+     - Choose suitable state-of-the-art models tailored to the task characteristics.
+     - Integration of ML/DL algorithms (XGBoost, Random Forest, etc.)
+     - Neural network architecture (custom layers, activation functions, attention mechanisms, normalization, regularization, etc.)
+     - Training objectives (custom loss functions, auxiliary tasks, or multi-task learning)
+     - Regularization strategies (dropout, weight decay, label smoothing, etc.)
+     - Hyperparameter optimization (learning rate, schedulers, batch size, model depth/width, etc.)
+     - Cross-validation for hyperparameter tuning (searching for optimal hyperparameters on the training set via cross-validation, then training the final model on the validation set)
+     - Efficient training/inference pipelines (batching, data loading, distributed training, etc.)
+     - Numerical stability and reproducibility (any known techniques to improve performance or efficiency in this domain)
+     - ML tricks, Kaggle techniques, feature selection, feature engineering, model ensembling, etc.
+    You may combine multiple steps, design new functional pipelines, restructure model architectures, or adopt any standard or innovative ML methods (as long as implemented in Python).
+    **Imporatance Note**: When designing your solution, you should also take into account the timeframe in which the competition was held. Some competitions took place over ten years ago, when many of today's powerful models did not yet exist and deep learning itself was still in its early stages. In fact, you could even outperform others by combining straightforward machine learning approaches with well-chosen implementation tricks.
+    **When utilizing machine learning frameworks like XGBoost (xgb), and CatBoost, training should be performed on GPU rather than CPU.(Where possible, avoid using LightGBM, as its training time is excessively long and often unacceptable.)** 
+
+    # Core Task Info
+    {
+      "Task Type": "Recommendation",
+      "Data Type": "Tabular, Time Series, Text (Natural Language Processing), Image (Computer Vision)",
+      "Brief Description": "In this competition, H&M Group invites participants to develop product recommendations based on data from previous transactions, as well as from customer and product metadata. The challenge is to predict which articles each customer will purchase in the 7-day period immediately after the training data ends, aiming to enhance the shopping experience and improve sustainability by reducing returns.",
+      "Dataset Description": "The dataset consists of customer purchase history, metadata for customers and articles, and corresponding article images. The data is structured into several files:\n- `transactions_train.csv`: This 3.4 GB file contains the training data, detailing the purchases made by each customer for each date (`t_dat`), including `customer_id`, `article_id`, `price`, and `sales_channel_id`. It represents the historical transaction data.\n- `customers.csv`: This file provides metadata for each `customer_id`, including demographic information like `age`, `club_member_status`, and `postal_code`.\n- `articles.csv`: This file contains detailed metadata for each `article_id`, such as product name (`prod_name`), product type (`product_type_name`), a detailed text description (`detail_desc`), and color information.\n- `images/`: This folder contains images corresponding to each `article_id`. The images are organized into subfolders named after the first three digits of the `article_id` (e.g., images for `article_id` 0108775015 are in the `images/010/` subfolder).\n- `sample_submission.csv`: A file demonstrating the required submission format.",
+      "Submission Specifications": "For each `customer_id`, you must predict up to 12 `article_id`s that the customer is predicted to buy in the 7-day period following the training data. The submission file must be a CSV with a header and two columns: `customer_id` and `prediction`. The `prediction` column should contain a single string of space-separated `article_id`s. It is advantageous to always provide 12 predictions per customer.\n\nExample format:\n```\ncustomer_id,prediction\n00000dba,0706016001 0706016002 0372860001 ...\n0000423b,0706016001 0706016002 0372860001 ...\n```",
+      "Submission channel number to each sample": 12,
+      "Metric Evaluation Description": "Submissions are evaluated using the Mean Average Precision @ 12 (MAP@12). The formula is:\n$$\\text{MAP@12}=\\frac{1}{U} \\sum_{u=1}^U \\frac{1}{\\min (m, 12)} \\sum_{k=1}^{\\min (n, 12)} P(k) \\times \\text{rel}(k)$$\nWhere:\n- `U` is the total number of customers in the test set.\n- `n` is the number of predictions made for a customer (up to 12).\n- `m` is the number of ground truth items (actual purchases) for a customer.\n- `P(k)` is the precision at cutoff `k` (the proportion of correct predictions among the top `k` predictions).\n- `rel(k)` is an indicator function that is 1 if the item at rank `k` is a correct prediction and 0 otherwise.\n\nKey points:\n- Customers who did not make any purchases during the test period are excluded from scoring.\n- There is no penalty for providing 12 predictions even if a customer purchased fewer than 12 items; thus, making 12 predictions for each customer is recommended.",
+      "Metric Name": "Mean Average Precision @ 12 (MAP@12)",
+      "Metric Direction": true,
+      "Longer time limit required": "True"
+    }
+
+    # Dataset
+
+    ## Data path:
+    /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/h-and-m-personalized-fashion-recommendations/prepared/public
+
+    ## File tree:
+    ```
+    ./
+    ├── images/
+    │   ├── 010/
+    │   │   ├── 0108775015.jpg (154.6 kB)
+    │   │   ├── 0108775044.jpg (106.7 kB)
+    │   │   ├── 0108775051.jpg (363.4 kB)
+    │   ├── 011/
+    │   │   ├── 0110065001.jpg (148.6 kB)
+    │   │   ├── 0110065002.jpg (85.7 kB)
+    │   │   ├── ... (+18 more files)
+    │   ├── ... (+84 more directories)
+    ├── transactions_train.csv (3.4 GB)
+    ├── sample_submission.csv (270.3 MB)
+    ├── customers.csv (207.1 MB)
+    ├── articles.csv (36.1 MB)
+    ├── description.md (4.9 kB)```
+
+    ### Image dimension analysis:
+    - Total image files found: 105100 (distributed across 86 directories)
+    - Sampled 1000 images
+
+    #### Image distribution by directory:
+
+    #### Global image statistics (all directories):
+
+    ##### Width statistics (pixels):
+      - Minimum: 406
+      - Maximum: 3056
+      - Mean: 1187.10
+      - Median: 1166
+      - Standard deviation: 193.84
+
+    ##### Height statistics (pixels):
+      - Minimum: 1749
+      - Maximum: 1750
+      - Mean: 1749.99
+      - Median: 1750
+      - Standard deviation: 0.11
+
+    ##### Aspect ratio (width/height) statistics:
+      - Minimum: 0.232
+      - Maximum: 1.747
+      - Mean: 0.678
+      - Median: 0.666
+      - Standard deviation: 0.111
+
+
+    ## File details:
+
+    (Showing details for representative files out of many)
+
+    ### articles.csv: 
+    #### 1.DataFrame preview:
+    It has 105542 rows and 25 columns.
+    Here is some information about the columns:
+    article_id (int64) has range: 108775015.00 - 959461001.00, 0 nan values
+    colour_group_code (int64) has range: -1.00 - 93.00, 0 nan values
+    colour_group_name (object) has 50 unique values. Some example values: ['Black', 'Dark Blue', 'White', 'Light Pink']
+    department_name (object) has 250 unique values. Some example values: ['Jersey', 'Knitwear', 'Trouser', 'Blouse']
+    department_no (int64) has range: 1201.00 - 9989.00, 0 nan values
+    detail_desc (object) has 43404 unique values. Some example values: ['T-shirt in printed cotton jersey.', 'Leggings in soft organic cotton jersey with an elasticated waist.', 'T-shirt in soft, printed cotton jersey.', 'Socks in a soft, jacquard-knit cotton blend with elasticated tops.']
+    garment_group_name (object) has 21 unique values. Some example values: ['Jersey Fancy', 'Accessories', 'Jersey Basic', 'Knitwear']
+    garment_group_no (int64) has range: 1001.00 - 1025.00, 0 nan values
+    graphical_appearance_name (object) has 30 unique values. Some example values: ['Solid', 'All over pattern', 'Melange', 'Stripe']
+    graphical_appearance_no (int64) has range: -1.00 - 1010029.00, 0 nan values
+    index_code (object) has 10 unique values. Some example values: ['A', 'D', 'F', 'H']
+    index_group_name (object) has 5 unique values: ['Ladieswear', 'Baby/Children', 'Menswear', 'Sport', 'Divided']
+    index_group_no (int64) has 5 unique values: [1, 4, 3, 26, 2]
+    index_name (object) has 10 unique values. Some example values: ['Ladieswear', 'Divided', 'Menswear', 'Children Sizes 92-140']
+    perceived_colour_master_id (int64) has range: -1.00 - 20.00, 0 nan values
+    perceived_colour_master_name (object) has 20 unique values. Some example values: ['Black', 'Blue', 'White', 'Pink']
+    perceived_colour_value_id (int64) has 8 unique values: [4, 3, 1, 2, 5, 7, 6, -1]
+    perceived_colour_value_name (object) has 8 unique values: ['Dark', 'Light', 'Dusty Light', 'Medium Dusty', 'Bright', 'Medium', 'Undefined', 'Unknown']
+    prod_name (object) has 45875 unique values. Some example values: ['Dragonfly dress', 'Mike tee', 'Wow printed tee 6.99', '1pk Fun']
+    product_code (int64) has range: 108775.00 - 959461.00, 0 nan values
+    product_group_name (object) has 19 unique values. Some example values: ['Garment Upper body', 'Garment Lower body', 'Garment Full body', 'Accessories']
+    product_type_name (object) has 131 unique values. Some example values: ['Trousers', 'Dress', 'Sweater', 'T-shirt']
+    product_type_no (int64) has range: -1.00 - 762.00, 0 nan values
+    section_name (object) has 56 unique values. Some example values: ['Womens Everyday Collection', 'Divided Collection', 'Baby Essentials & Complements', 'Kids Girl']
+    section_no (int64) has range: 2.00 - 97.00, 0 nan values
+    Columns containing NaN values: detail_desc
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+      article_id  product_code      prod_name  product_type_no product_type_name  product_group_name  ...  colour_group_name perceived_colour_value_id  perceived_colour_value_name perceived_colour_master_id  perceived_colour_master_name department_no
+    0   108775015        108775      Strap top              253          Vest top  Garment Upper body  ...              Black                         4                         Dark                          5                         Black          1676
+    1   108775044        108775      Strap top              253          Vest top  Garment Upper body  ...              White                         3                        Light                          9                         White          1676
+    2   108775051        108775  Strap top (1)              253          Vest top  Garment Upper body  ...          Off White                         1                  Dusty Light                          9                         White          1676
+
+    [3 rows x 15 columns]
+    ... (showing first 15 of 25 columns)
+
+    ### customers.csv: 
+    #### 1.DataFrame preview:
+    It has 1371980 rows and 7 columns.
+    Here is some information about the columns:
+    Active (float64) has 1 unique values: [nan, 1.0]
+    FN (float64) has 1 unique values: [nan, 1.0]
+    age (float64) has range: 16.00 - 99.00, 15861 nan values
+    club_member_status (object) has 3 unique values: ['ACTIVE', nan, 'PRE-CREATE', 'LEFT CLUB']
+    customer_id (object) has 1371980 unique values. Some example values: ['ffffd9ac14e89946416d80e791d064701994755c3ab686a1eaf3458c36f52241', '00000dbacae5abe5e23885899a1fa44253a17956c6d1c3d25f88aa139fdfc657', '0000423b00ade91418cceaf3b26c6af3dd342b51fd051eec9c12fb36984420fa', '000058a12d5b43e67d225668fa1f8d618c13dc232df0cad8ffe7ad4a1091e318']
+    fashion_news_frequency (object) has 3 unique values: ['NONE', 'Regularly', nan, 'Monthly']
+    postal_code (object) has 352899 unique values. Some example values: ['2c29ae653a9282cce4151bd87643c907644e09541abc28ae87dea0d1f6603b1c', 'cc4ed85e30f4977dae47662ddc468cd2eec11472de6fac5ec985080fd92243c8', '714976379549eb90aae4a71bca6c7402cc646ae7c40f6c1cb91d4b5a18623fc1', '7c1fa3b0ec1d37ce2c3f34f63bd792f3b4494f324b6be5d1e4ba6a75456b96a7']
+    Columns containing NaN values: FN, Active, club_member_status, fashion_news_frequency, age
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                                            customer_id  FN  Active club_member_status fashion_news_frequency   age                                        postal_code
+    0  00000dbacae5abe5e23885899a1fa44253a17956c6d1c3... NaN     NaN             ACTIVE                   NONE  49.0  52043ee2162cf5aa7ee79974281641c6f11a68d276429a...
+    1  0000423b00ade91418cceaf3b26c6af3dd342b51fd051e... NaN     NaN             ACTIVE                   NONE  25.0  2973abc54daa8a5f8ccfe9362140c63247c5eee03f1d93...
+    2  000058a12d5b43e67d225668fa1f8d618c13dc232df0ca... NaN     NaN             ACTIVE                   NONE  24.0  64f17e6a330a85798e4998f62d0930d14db8db1c054af6...
+
+    ### sample_submission.csv: 
+    #### 1.DataFrame preview:
+    It has 1371980 rows and 2 columns.
+    Here is some information about the columns:
+    customer_id (object) has 1371980 unique values. Some example values: ['ffffd9ac14e89946416d80e791d064701994755c3ab686a1eaf3458c36f52241', '00000dbacae5abe5e23885899a1fa44253a17956c6d1c3d25f88aa139fdfc657', '0000423b00ade91418cceaf3b26c6af3dd342b51fd051eec9c12fb36984420fa', '000058a12d5b43e67d225668fa1f8d618c13dc232df0cad8ffe7ad4a1091e318']
+    prediction (object) has 1 unique values: ['0706016001 0706016002 0372860001 0610776002 0759871002 0464297007 0372860002 0610776001 0399223001 0706016003 0720125001 0156231001']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+                                            customer_id                                         prediction
+    0  00000dbacae5abe5e23885899a1fa44253a17956c6d1c3...  0706016001 0706016002 0372860001 0610776002 07...
+    1  0000423b00ade91418cceaf3b26c6af3dd342b51fd051e...  0706016001 0706016002 0372860001 0610776002 07...
+    2  000058a12d5b43e67d225668fa1f8d618c13dc232df0ca...  0706016001 0706016002 0372860001 0610776002 07...
+
+    ### transactions_train.csv: 
+    #### 1.DataFrame preview:
+    It has 31521960 rows and 5 columns.
+    Here is some information about the columns:
+    article_id (int64) has range: 108775015.00 - 956217002.00, 0 nan values
+    customer_id (object) has 1356132 unique values. Some example values: ['be1981ab818cf4ef6765b2ecaea7a2cbf14ccd6e8a7ee985513d9e8e53c6d91b', 'b4db5e5259234574edfff958e170fe3a5e13b6f146752ca066abca3c156acc71', '49beaacac0c7801c2ce2d189efe525fe80b5d37e46ed05b50a4cd88e34d0748f', 'a65f77281a528bf5c1e9f270141d601d116e1df33bf9df512f495ee06647a9cc']
+    price (float64) has range: 0.00 - 0.59, 0 nan values
+    sales_channel_id (int64) has 2 unique values: [2, 1]
+    t_dat (object) has 726 unique values. Some example values: ['2019-09-28', '2020-04-11', '2019-11-29', '2018-11-23']
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+            t_dat                                        customer_id  article_id     price  sales_channel_id
+    0  2018-09-20  000058a12d5b43e67d225668fa1f8d618c13dc232df0ca...   663713001  0.050831                 2
+    1  2018-09-20  000058a12d5b43e67d225668fa1f8d618c13dc232df0ca...   541518023  0.030492                 2
+    2  2018-09-20  00007d2de826758b65a93dd24ce629ed66842531df6699...   505221004  0.015237                 2             2
+
+
+    # Other Requirements
+     - Code Generation Requirements:
+        - Library Imports: All libraries must be imported at the beginning of the file. Implicit imports are prohibited.
+        - Feature Processing: Handle missing values and features conservatively. For uncertain feature types, first determine the type before selecting imputation and processing strategies.
+        - Computing resource: Provides sufficient CPU computing power and 1 A800 graphics cards, you can use them freely if necessary.
+        - CPU resources are relatively sufficient, so it is appropriate to run more workers during data processing and loading.
+        - Maximize GPU utilization and estimate a suitable batch size based on the number of model parameters.
+        - Try to use the latest models, which often bring better results. For example, efficient_net is often better than restnet, and the larger size of efficient_net, such as large, is also better than base.
+        - If you train a deep learning model, do not train for more than 10 epochs at the beginning. You can adjust it according to the results of the code execution. If it is underfitting, you can increase the epochs.
+        - For a deep learning task, predictions need to be made after each epoch of training and the corresponding submission_epoch.csv file needs to be generated. The storage path should remain consistent. For example, for a task that trains for 3 epochs, the first round of training predictions is saved as `submission_1.csv`, the second round of training predictions is saved as `submission_2.csv`, and so on...
+        - You need to save the trained model to the specified save address above. The model should be saved in the format of the `transformers` library. Furthermore, ensure that each epoch's model is saved in a folder following the naming convention `model_name_epoch`.
+        - If you intend to use certain models, you should use the name from Hugging Face rather than a local directory.
+        - Prioritize the `transformers` library over `timm` for all model loading operations.
+        - When a pre-trained model download from a remote repository like Hugging Face fails, attempt to use a different model rather than retrying the same one.
+        - **Do not use exception handling mechanisms in any data loading steps; expose potential issues instead, and never fabricate submission files.**
+        
+     - Code Style:
+        - Clear variable naming
+        - Optional type annotations
+        - Brief comments for key steps
+        - Print information about key steps instead of using tqdm to print the training process
+        - All variables and standard library functions must be defined before use
+        - Directly generate a complete, end-to-end CSV output
+        - Provide executable code that runs without errors and produces the **submission.csv** file as required
+        Suppress all warnings to avoid displaying warning messages
+    
+      ## Ultimate Goal
+        - Maximize your score in this task/competition and rank higher on the leaderboard. Apply a combination of techniques (machine learning knowledge and Kaggle competition tricks) to achieve this.
+
+      ## Scheme Limitations
+        - Your proposed solutions must account for time constraints. The running time of any plan should not exceed 6 hours; otherwise, it will be difficult to complete execution smoothly.
+    
+    ## File Paths
+     - Submission file Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/h-and-m-personalized-fashion-recommendations/submission.csv
+     - Model Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/h-and-m-personalized-fashion-recommendations/model_save
+     - Read path: /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/h-and-m-personalized-fashion-recommendations/prepared/public/
+
+    
+  language: python
+  strategy: example_strategy  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 50
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  # Experience system
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+    l1_trigger: interval
+    l1_interval: 6
+    # l0_path: ./famou_data/circle_packing_evolution_20260318_172949_926d/
+
+  # Knowledge system (MethodCard)
+  knowledge:
+    enabled: false
+    source_dir: knowledge
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 100
+    migration_interval: 5
+    migration_size: 1
+    migration_topology: ring
+    reset_interval: 15
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    api_base: http://211.23.3.237:27544/v1
+    model: gemini-3-pro-preview
+    api_key: YOUR_API_KEY  # Replace with your API key or use environment variable
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 3600
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 14400
+    # GPU Usage (Optional)
+    gpu_ids: [1]      # Available GPU IDs (empty list = no GPU)
+    gpu_num_each_run: 1.0      # Number of GPUs per evaluation task
+    input_params:
+      competition_name: h-and-m-personalized-fashion-recommendations
+  
+  # Monitoring Configuration (Optional)
+  monitor:
+    enabled: false  # Set to false to disable monitoring
+    type: wandb  # Monitoring backend type (currently only 'wandb' is supported)
+
+    # WandB-specific settings
+    wandb:
+      project: famou-mlebench  # WandB project name
+      entity: null  # WandB entity (username or team), null for default
+      run_name: null  # Run name, null for auto-generation
+      group: null  # Group name for grouping related runs
+      tags:
+        - mlebench
+        - creative_exploration
+      notes: "Circle packing optimization with creative exploration strategy"
+
+      # Async logging settings
+      async_mode: true  # Enable asynchronous (non-blocking) logging
+      num_workers: 4  # Number of async worker threads
+      queue_size: 100  # Max queue size for async logging
+
+      # What to monitor
+      track_metrics:
+        islands: true  # Track metrics for each island
+        performance: true  # Track performance metrics (best, avg, median scores)
+        population: true  # Track population metrics (size, generations)
+        diversity: true  # Track diversity metrics (genetic, code diversity)
+        cost: true  # Track LLM API costs
+      track_artifacts: true  # Track artifacts (best programs, visualizations)
+      track_lineage_tree: true  # Track lineage tree visualization
+      checkpoint_interval: 1  # Record metrics every N iterations
+
+  # langfuse configuration (optional)
+  # langfuse:
+  #   enabled: false  # Set to false to disable Langfuse integration
+  #   public_key: your_public_key
+  #   secret_key: your_secret_key
+  #   base_url: https://us.cloud.langfuse.com
+
+
+
+# =============================================================================
+# Module Parameters (optional) - ALGORITHM parameters
+# =============================================================================
+modules:
+  generate:
+    # Production canary for new generation protocol:
+    # - hybrid: XML-first + fenced/json fallback (recommended)
+    # - xml: strict XML-first
+    # - legacy_json: one-click rollback
+    output_protocol: hybrid

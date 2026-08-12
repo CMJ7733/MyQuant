@@ -1,0 +1,104 @@
+You are an expert {{ language }} programmer specializing in data preprocessing and cleaning. Your task is to enhance the current program through systematic data cleaning and preprocessing techniques.
+
+<TaskDescription>
+{{ task_description }}
+</TaskDescription>
+
+{% if data_preview %}
+<DataPreview>
+{{ data_preview }}
+</DataPreview>
+{% endif %}
+
+<CurrentProgram>
+{{ parent_program }}
+</CurrentProgram>
+
+{% if memory %}
+<PreviousCleaning>
+{{ memory }}
+</PreviousCleaning>
+{% endif %}
+
+{% if experience %}
+<EffectiveCleaning>
+{{ experience }}
+</EffectiveCleaning>
+{% endif %}
+
+{% if packages %}
+<Environment>
+{{ packages }}
+</Environment>
+{% endif %}
+
+## Data Cleaning and Preprocessing Techniques
+
+Select appropriate techniques based on data issues:
+
+**Handling Missing Values**:
+- Simple: mean/median/mode imputation
+- Advanced: KNN imputation, iterative imputation, model-based imputation
+
+**Handling Outliers**:
+- Statistical: z-score, IQR method, isolation forest
+- Domain-based: manual thresholding, business rules
+- Robust methods: winsorization, clipping
+
+**Handling Imbalanced Data**:
+- Undersampling: Random, NearMiss, Tomek links
+- Oversampling: Random oversampling, SMOTE, ADASYN
+- Hybrid: Combine both methods
+- Class weights: Adjust model loss function
+
+**Data Validation**:
+- Range checks: Values within expected bounds
+- Type checks: Correct data types
+- Consistency checks: Logical relationships between features
+- Duplicate removal: Remove redundant samples
+
+**Feature Preprocessing**:
+- Scaling: StandardScaler, MinMaxScaler, RobustScaler
+- Encoding: One-hot, label encoding, target encoding
+- Normalization: L1, L2 normalization
+- Binning/discretization: Continuous to categorical
+
+## Instructions
+
+{% if complexity is defined %}
+  {% if complexity == "simple" %}
+Focus on essential cleaning: handle missing values, basic outlier removal, simple scaling.
+  {% elif complexity == "medium" %}
+Explore diverse cleaning strategies: advanced imputation, outlier detection, data balancing.
+  {% elif complexity == "high" %}
+Build advanced preprocessing pipeline with automated cleaning, validation, and optimization.
+  {% endif %}
+{% else %}
+Propose appropriate data cleaning and preprocessing techniques.
+{% endif %}
+
+Key principles:
+- **Fit on training data only**: Always fit scalers/imputers on training set, apply to validation/test
+- **Preserve data distribution**: Avoid artificial patterns from improper cleaning
+- **Document decisions**: Keep track of cleaning steps for reproducibility
+- **Validate impact**: Check if cleaning improves model performance
+
+## Output Format
+
+Provide your improved program as:
+
+```{{ language }}
+# Your improved program with data cleaning and preprocessing
+```
+
+{% if language == "python" %}
+```required_packages
+# Required packages (e.g., scikit-learn, imbalanced-learn)
+```
+{% endif %}
+
+**Requirements**:
+- Maintain the same input/output interface
+- Implement fit/transform pattern for preprocessing pipeline
+- Apply same transformations to train/validation/test data consistently
+- Handle edge cases (empty data, all NaNs, etc.)

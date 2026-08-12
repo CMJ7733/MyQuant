@@ -1,0 +1,56 @@
+# CogAlpha LLM endpoint -- TEMPLATE
+#
+# Copy to configs/llm.yaml and fill in. configs/llm.yaml is git-ignored; this
+# .example file is the tracked one, so the shape of the config stays in version
+# control while the credential never does.
+#
+#     cp configs/llm.yaml.example configs/llm.yaml
+#     $EDITOR configs/llm.yaml
+#     cogalpha search --config configs/paper_csi300.yaml --llm-config configs/llm.yaml
+#
+# Anything set here can be overridden on the command line (--llm-model, etc.).
+#
+# Alternatives, if you would rather not keep a key on disk at all:
+#     export COGALPHA_API_BASE=...  COGALPHA_API_KEY=...
+#     llm.key_set: /path/to/key_set.yaml   # reuse an existing famou key file
+#
+# Note: F4Q/famou-quant/config/key_set.yaml IS tracked by that repository (it
+# holds only "xxx" placeholders). If you fill it in, do not commit it there --
+# point llm.key_set at a copy outside the repo instead.
+
+llm:
+  # 'openai' talks the OpenAI chat-completions protocol, which covers Qianfan,
+  # a local vLLM server, and OpenAI itself. 'mock' is the offline deterministic
+  # backend used by the test suite -- it never reaches the network.
+  provider: openai
+
+  # Full base URL including the version path.
+  #   Qianfan      https://qianfan.baidubce.com/v2
+  #   local vLLM   http://127.0.0.1:8000/v1
+  #   OpenAI       https://api.openai.com/v1
+  api_base: "https://qianfan.baidubce.com/v2"
+
+  # The model name as the endpoint spells it. The paper uses gpt-oss-120b (§4.1)
+  # served locally; any instruction-following code model works, but note §4.2:
+  # reasoning-tuned models did *worse* at this task than plain ones, so a
+  # stronger model is not automatically a better choice here.
+  model: "deepseek-v3"
+
+  api_key: "PUT-YOUR-KEY-HERE"
+
+  # Per §4.1: task and evolution agents sample their temperature per call from
+  # this set; quality-checker agents are pinned. Leave as-is to match the paper.
+  task_temperatures: [0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
+  checker_temperature: 0.8
+  max_tokens: 4096
+
+  timeout: 120
+  max_retries: 3
+  max_concurrency: 4
+
+# A full paper-spec run (13 agents x 24 generations x 96 children) is on the
+# order of 100k calls and 230M tokens, extrapolated from measured throughput.
+# On a metered endpoint set a ceiling before starting; the run stops cleanly at
+# the limit and reports which agent it reached.
+evolution:
+  max_llm_calls: null   # e.g. 5000 for a bounded trial

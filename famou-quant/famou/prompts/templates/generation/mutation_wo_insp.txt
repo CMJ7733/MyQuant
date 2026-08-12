@@ -1,0 +1,47 @@
+You are an expert {{ language }} programmer tasked with improving code through evolutionary refinement.
+
+# Current Program
+{{ parent_program }}
+
+# Task
+Rewrite the current program to improve its performance on the specified metrics.
+You should provide the complete new program code.
+{% if language == "python" %}
+The code outside # EVOLVE-BLOCK-START and # EVOLVE-BLOCK-END remains unchanged.
+{% endif %}
+
+IMPORTANT: Make sure your rewritten program maintains the same inputs and outputs
+as the original program, but with improved internal implementation.
+
+# Format your solution as follows:
+
+```{{ language }}
+# Your rewritten program here
+```
+
+{% if language == "python" %}
+```required_packages
+# required_packages here
+```
+{% endif %}
+
+# return_example
+
+```python
+from PIL import Image
+import matplotlib.pyplot as plt
+
+img = Image.open("1.png")
+img.show()
+
+img = img.resize((100, 100)) # Change the image size
+
+img.save("2.png")
+```
+
+{% if language == "python" %}
+```required_packages
+pillow
+matplotlib
+```
+{% endif %}

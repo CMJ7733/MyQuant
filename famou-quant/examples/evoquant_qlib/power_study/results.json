@@ -1,0 +1,230 @@
+{
+  "summary": {
+    "episode": "E1 (development)",
+    "promo_segment": [
+      "2015-01-05",
+      "2015-12-29"
+    ],
+    "n_promo_days": 228,
+    "null_median_std_d": 0.051000000000000004,
+    "null_median_rho1": 0.0935,
+    "null_median_delta_min": 0.009139999999999999,
+    "null_max_abs_t": 1.72,
+    "null_false_pos_1sided_5pct": 1,
+    "base_promo_rankic_mean": 0.06826446879667525,
+    "go_threshold": 0.01,
+    "nogo_threshold": 0.015,
+    "verdict": "GO"
+  },
+  "pairs": [
+    {
+      "kind": "NULL",
+      "pair": "seed0 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.0035,
+      "std_d": 0.05431,
+      "rho1": 0.149,
+      "n_eff": 169.0,
+      "t_eff": 0.84,
+      "delta_min": 0.01039,
+      "corr_ab": 0.935,
+      "var_reduction_vs_unpaired": 0.065
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed1 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.00666,
+      "std_d": 0.0509,
+      "rho1": 0.135,
+      "n_eff": 173.6,
+      "t_eff": 1.72,
+      "delta_min": 0.0096,
+      "corr_ab": 0.942,
+      "var_reduction_vs_unpaired": 0.058
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed2 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.00579,
+      "std_d": 0.05175,
+      "rho1": 0.033,
+      "n_eff": 213.5,
+      "t_eff": 1.64,
+      "delta_min": 0.00881,
+      "corr_ab": 0.941,
+      "var_reduction_vs_unpaired": 0.059
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed3 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.00483,
+      "std_d": 0.05983,
+      "rho1": 0.102,
+      "n_eff": 185.8,
+      "t_eff": 1.1,
+      "delta_min": 0.01091,
+      "corr_ab": 0.919,
+      "var_reduction_vs_unpaired": 0.081
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed1 - seed0",
+      "n_days": 228,
+      "mean_d": 0.00316,
+      "std_d": 0.04892,
+      "rho1": 0.047,
+      "n_eff": 207.6,
+      "t_eff": 0.93,
+      "delta_min": 0.00844,
+      "corr_ab": 0.947,
+      "var_reduction_vs_unpaired": 0.053
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed2 - seed0",
+      "n_days": 228,
+      "mean_d": 0.00229,
+      "std_d": 0.04718,
+      "rho1": 0.093,
+      "n_eff": 189.1,
+      "t_eff": 0.67,
+      "delta_min": 0.00853,
+      "corr_ab": 0.952,
+      "var_reduction_vs_unpaired": 0.048
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed3 - seed0",
+      "n_days": 228,
+      "mean_d": 0.00133,
+      "std_d": 0.04932,
+      "rho1": 0.152,
+      "n_eff": 167.7,
+      "t_eff": 0.35,
+      "delta_min": 0.00947,
+      "corr_ab": 0.946,
+      "var_reduction_vs_unpaired": 0.055
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed2 - seed1",
+      "n_days": 228,
+      "mean_d": -0.00086,
+      "std_d": 0.0481,
+      "rho1": -0.035,
+      "n_eff": 244.6,
+      "t_eff": -0.28,
+      "delta_min": 0.00765,
+      "corr_ab": 0.949,
+      "var_reduction_vs_unpaired": 0.051
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed3 - seed1",
+      "n_days": 228,
+      "mean_d": -0.00182,
+      "std_d": 0.0511,
+      "rho1": 0.019,
+      "n_eff": 219.5,
+      "t_eff": -0.53,
+      "delta_min": 0.00858,
+      "corr_ab": 0.941,
+      "var_reduction_vs_unpaired": 0.059
+    },
+    {
+      "kind": "NULL",
+      "pair": "seed3 - seed2",
+      "n_days": 228,
+      "mean_d": -0.00096,
+      "std_d": 0.0523,
+      "rho1": 0.094,
+      "n_eff": 188.7,
+      "t_eff": -0.25,
+      "delta_min": 0.00947,
+      "corr_ab": 0.939,
+      "var_reduction_vs_unpaired": 0.061
+    },
+    {
+      "kind": "PERTURB",
+      "pair": "lr0.15 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.00237,
+      "std_d": 0.05867,
+      "rho1": 0.07,
+      "n_eff": 198.3,
+      "t_eff": 0.57,
+      "delta_min": 0.01036,
+      "corr_ab": 0.925,
+      "var_reduction_vs_unpaired": 0.075
+    },
+    {
+      "kind": "PERTURB",
+      "pair": "leaves180 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.0,
+      "std_d": 0.0,
+      "rho1": NaN,
+      "n_eff": 228.0,
+      "t_eff": NaN,
+      "delta_min": 0.0,
+      "corr_ab": 1.0,
+      "var_reduction_vs_unpaired": 0.0
+    },
+    {
+      "kind": "PERTURB",
+      "pair": "l1_300 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.00154,
+      "std_d": 0.04703,
+      "rho1": 0.194,
+      "n_eff": 153.9,
+      "t_eff": 0.41,
+      "delta_min": 0.00943,
+      "corr_ab": 0.951,
+      "var_reduction_vs_unpaired": 0.049
+    },
+    {
+      "kind": "PERTURB",
+      "pair": "col0.75 - seed2026",
+      "n_days": 228,
+      "mean_d": 0.00756,
+      "std_d": 0.05657,
+      "rho1": 0.076,
+      "n_eff": 195.6,
+      "t_eff": 1.87,
+      "delta_min": 0.01006,
+      "corr_ab": 0.928,
+      "var_reduction_vs_unpaired": 0.072
+    },
+    {
+      "kind": "GAP",
+      "pair": "shallow - seed2026",
+      "n_days": 228,
+      "mean_d": 0.01143,
+      "std_d": 0.06844,
+      "rho1": 0.078,
+      "n_eff": 194.8,
+      "t_eff": 2.33,
+      "delta_min": 0.01219,
+      "corr_ab": 0.894,
+      "var_reduction_vs_unpaired": 0.106
+    }
+  ],
+  "segments": {
+    "train": [
+      "2008-01-02",
+      "2013-12-27"
+    ],
+    "dev": [
+      "2014-01-02",
+      "2014-12-29"
+    ],
+    "promo": [
+      "2015-01-05",
+      "2015-12-29"
+    ]
+  }
+}

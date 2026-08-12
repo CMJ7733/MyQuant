@@ -1,0 +1,183 @@
+# ================================================
+# CVRP with Planning-Based Evolution
+# Using Planner-guided block modifications
+# ================================================
+
+experiment:
+  name: "cvrp_planning"
+  task_description: |
+    Optimize ALNS operators for Capacitated Vehicle Routing Problem (CVRP).
+
+    The evaluator compiles this file with the ALNS framework and runs it on 128 CVRP instances.
+    Your goal is to maximize the combined_score by minimizing avg_final_cost.
+
+    Current BLOCKs
+      - BLOCK A: DESTROY OPERATORS (4 functions: destroy_random, destroy_worst, destroy_shaw, destroy_string)
+      - BLOCK B: REPAIR OPERATORS (2 functions: repair_greedy, repair_regret)
+      - BLOCK C: INITIAL SOLUTION CONSTRUCTORS (3 functions: init_greedy, init_nearest_neighbor, init_random)
+      - BLOCK D: LOCAL SEARCH OPERATORS (1 function: ls_two_opt)
+
+    Hard constraints
+      - Only modify code inside the BLOCK markers:
+            //==============================================================================
+            // BLOCK A START: DESTROY OPERATORS
+            //==============================================================================
+            ... your code ...
+            // BLOCK A END
+        Keep all markers and the file structure unchanged.
+
+      - Do NOT:
+          * change function signatures (parameters must remain the same)
+          * modify or remove includes at the top of the file
+          * change the file name or BLOCK markers
+          * add external dependencies or file I/O
+          * use non-deterministic features (keep same seed = same result)
+
+      - All functions must:
+          * maintain solution feasibility (respect capacity constraints)
+          * handle edge cases (empty routes, single customer, etc.)
+          * be efficient (O(n²) at most for local search)
+          * be deterministic (same input → same output with same RNG state)
+
+    BLOCK-specific constraints
+
+      BLOCK A: Destroy Operators
+        Signature: CVRPSolution destroy_xxx(const CVRPSolution& sol, int q, const CVRPInstance& inst, std::mt19937& rng)
+        - Input: current solution, removal count q, instance, RNG
+        - Output: CVRPSolution with q customers removed (stored in sol.removed)
+        - Requirements:
+            * Remove exactly q customers (or fewer if not enough exist)
+            * Store removed customer IDs in sol.removed vector
+            * Preserve feasibility of remaining routes
+            * Use provided RNG for randomness
+        - You may implement strategies like:
+            * Random removal
+            * Worst-cost removal
+            * Shaw removal (similarity-based)
+            * String removal (consecutive customers)
+            * Route-based removal
+            * Cluster-based removal
+
+      BLOCK B: Repair Operators
+        Signature: CVRPSolution repair_xxx(CVRPSolution& sol, const std::vector<int>& removed, const CVRPInstance& inst)
+        - Input: partial solution, removed customers, instance
+        - Output: complete feasible solution
+        - Requirements:
+            * Insert ALL customers from 'removed' vector
+            * Maintain capacity feasibility
+            * Return valid solution (no customer left out)
+            * Minimize insertion cost
+        - You may implement strategies like:
+            * Greedy insertion (best position)
+            * Regret-k insertion
+            * Nearest neighbor insertion
+            * Route-aware insertion
+
+      BLOCK C: Initial Solution Constructors
+        Signature: CVRPSolution init_xxx(const CVRPInstance& inst, std::mt19937& rng)
+        - Input: instance, RNG
+        - Output: complete feasible initial solution
+        - Requirements:
+            * Construct valid solution from scratch
+            * All customers must be served
+            * Respect capacity constraints
+            * Should be reasonably good (not just random)
+        - You may implement strategies like:
+            * Greedy insertion
+            * Nearest neighbor
+            * Savings algorithm
+            * Sweep algorithm
+            * Random construction
+
+      BLOCK D: Local Search Operators
+        Signature: void ls_xxx(CVRPSolution& sol, const CVRPInstance& inst)
+        - Input/Output: solution to improve in-place, instance
+        - Requirements:
+            * Improve solution quality if possible
+            * Maintain feasibility
+            * Efficient (no nested loops beyond O(n²))
+            * Deterministic
+        - You may implement moves like:
+            * 2-opt (intra-route)
+            * Relocate (inter-route)
+            * Exchange (swap between routes)
+            * Or-opt
+            * Cross-exchange
+
+    Global design guidance
+
+      - Objective:
+          * Minimize avg_final_cost across 128 instances
+          * Score formula: combined_score = max(0, 100 - (avg_final_cost - 36.6))
+          * Best known cost is 36.6, baseline is 39.10
+
+      - Quality vs Speed trade-off:
+          * Each instance has 10-60 seconds to solve
+          * Balance operator complexity and iteration speed
+          * Prefer smart operators over brute-force
+
+      - Synergy between BLOCKs:
+          * Destroy operators should create "searchable" neighborhoods
+          * Repair should be fast but effective
+          * Init should provide diverse starting points
+          * Local search should exploit local structure
+
+      - Robustness:
+          * Handle edge cases (1 customer, full trucks, etc.)
+          * Never crash or produce infeasible solutions
+          * If uncertain, fall back to simpler behavior
+  language: "cpp"
+  strategy: "planning_based"
+  max_iterations: 3
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  island:
+    num_islands: 1
+    island_size: 3
+    migration_interval: 10
+    migration_size: 1
+
+# LLM Configuration (using OpenAI-compatible API)
+infrastructure:
+  llm:
+    provider: "openai"
+    api_base: "https://your-api-endpoint/v1"
+    model: "your-model-name"
+    api_key: "your-api-key"
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 300
+
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+# Module Configuration
+modules:
+  select:
+    planner_type: "llm_v2"
+    selection_strategy: "best"
+    num_inspirations: 1
+    default_blocks: ["A", "B", "C", "D"]
+
+  generate:
+    include_inspirations: false
+    temperature: 0.8
+    max_tokens: 64000
+
+  evaluate:
+    timeout: 300
+
+  judge:
+    reward_metric: "combined_score"
+    use_delta_reward: true
+
+  population:
+    k: 3

@@ -1,0 +1,58 @@
+# Bounded trial on real CSI300 data: 3 agents, 8 generations, 2 sub-cycles.
+#
+#     cogalpha search --config configs/quick.yaml --llm-config configs/llm.yaml
+#
+# Everything about the data and the metrics matches configs/paper_csi300.yaml; only
+# the schedule is smaller. Use this to confirm a real endpoint produces usable
+# alphas -- and what its pass rate through the quality checker is -- before
+# committing to a full run.
+#
+# Expect roughly 3 agents x 8 generations x 32 children of sandbox work (~15 min
+# here) and a few thousand LLM calls.
+
+data:
+  provider: qlib
+  market: csi300
+  horizon: 10
+  train: ["2011-01-01", "2019-12-31"]
+  valid: ["2020-01-01", "2020-12-31"]
+  test:  ["2021-01-01", "2024-12-01"]
+  fit_split: train
+  qlib_provider_uri: "~/.qlib/qlib_data/cn_data_2026"
+
+llm:
+  provider: openai
+  model: "deepseek-v4-flash"
+  checker_temperature: 0.8
+  max_tokens: 4096
+
+evolution:
+  agents_per_run: 3
+  generations: 8
+  sub_cycles: 2
+  initial_pool_size: 24
+  parent_pool_size: 16
+  children_multiplier: 2
+  alphas_per_agent: 6
+  inject_every: 2
+  elitism_carry: 2
+  plateau_window: 3
+  plateau_delta: 0.001
+  seed: 42
+  # A ceiling, so an unfamiliar endpoint cannot run away with the budget.
+  max_llm_calls: 4000
+
+fitness:
+  qualified_percentile: 65.0
+  elite_percentile: 80.0
+  mi_scale: corr_equivalent
+
+quality:
+  max_repair_rounds: 2
+  max_improve_rounds: 1
+  exec_timeout_s: 60.0
+  memory_limit_mb: 8192
+
+run:
+  out_dir: runs
+  top_candidates: 20

@@ -1,0 +1,291 @@
+# Circle Packing Experiment Configuration
+# Target: Maximize sum of radii for n=26 circles in unit square
+# AlphaEvolve benchmark result: 2.635
+
+# =============================================================================
+# Experiment Configuration - WHAT to optimize
+# =============================================================================
+experiment:
+  name: mlebench-siim-isic-melanoma-classification
+  task_description: |
+    You are an experienced machine learning algorithm engineer with expertise in end-to-end system optimization, feature engineering, robust neural network design, and efficient model development using PyTorch.
+    Your current task is to design a machine learning/deep learning algorithm based on the requirements above. You have full freedom to redesign, enhance, or replace any of the following components:
+     - Data loading and preprocessing (including augmentation, normalization, etc.)
+     - Feature engineering or preprocessing (including selection, transformation, and normalization)
+     - Choose suitable state-of-the-art models tailored to the task characteristics.
+     - Integration of ML/DL algorithms (XGBoost, Random Forest, etc.)
+     - Neural network architecture (custom layers, activation functions, attention mechanisms, normalization, regularization, etc.)
+     - Training objectives (custom loss functions, auxiliary tasks, or multi-task learning)
+     - Regularization strategies (dropout, weight decay, label smoothing, etc.)
+     - Hyperparameter optimization (learning rate, schedulers, batch size, model depth/width, etc.)
+     - Cross-validation for hyperparameter tuning (searching for optimal hyperparameters on the training set via cross-validation, then training the final model on the validation set)
+     - Efficient training/inference pipelines (batching, data loading, distributed training, etc.)
+     - Numerical stability and reproducibility (any known techniques to improve performance or efficiency in this domain)
+     - ML tricks, Kaggle techniques, feature selection, feature engineering, model ensembling, etc.
+    You may combine multiple steps, design new functional pipelines, restructure model architectures, or adopt any standard or innovative ML methods (as long as implemented in Python).
+    **Imporatance Note**: When designing your solution, you should also take into account the timeframe in which the competition was held. Some competitions took place over ten years ago, when many of today's powerful models did not yet exist and deep learning itself was still in its early stages. In fact, you could even outperform others by combining straightforward machine learning approaches with well-chosen implementation tricks.
+    **When utilizing machine learning frameworks like LightGBM (lgb), XGBoost (xgb), and CatBoost, training should be performed on GPU rather than CPU.** 
+
+    # Core Task Info
+    {
+        "Task Type": "Classification",
+        "Data Type": "Image (Computer Vision), Tabular",
+        "Brief Description": "This competition challenges participants to identify melanoma in dermoscopic images of skin lesions. The goal is to develop a model that can predict the probability of a lesion being malignant. A unique aspect of the competition is the encouragement to use patient-level contextual information (multiple images from the same patient) to improve diagnostic accuracy, mimicking the clinical workflow of dermatologists.",
+        "Dataset Description": "The dataset combines image data with corresponding metadata. The metadata is provided in two CSV files: `train.csv` (28,984 entries) and `test.csv` (4,142 entries). These files contain information such as `image_name`, `patient_id`, `sex`, `age_approx`, and `anatom_site_general_challenge`. The `train.csv` file also includes the ground truth `target` column, where 1 indicates a malignant lesion and 0 indicates a benign one. The image data is provided in three different formats located in corresponding folders: `jpeg/` (JPEG format), `train/` and `test/` (original DICOM format), and `tfrecords/` (TFRecord format with images resized to 1024x1024). The file structure is as follows:\n- `train.csv`: Training set metadata with target labels.\n- `test.csv`: Test set metadata without target labels.\n- `jpeg/train/`: 28,984 training images in JPEG format.\n- `jpeg/test/`: 4,142 test images in JPEG format.\n- `train/`: 28,984 training images in DICOM format.\n- `test/`: 4,142 test images in DICOM format.\n- `tfrecords/`: Training and test images pre-processed into TFRecord files.",
+        "Submission Specifications": "For each `image_name` in the test set, you must predict a single probability (`target`) that the lesion is malignant. The submission file must be a CSV file with a header and two columns: `image_name` and `target`. The format is as follows:\n```\nimage_name,target\nISIC_0052060,0.7\nISIC_0052349,0.9\nISIC_0058510,0.8\nISIC_0073313,0.5\nISIC_0073502,0.5\netc.\n```",
+        "Submission channel number to each sample": 1,
+        "Metric Evaluation Description": "Submissions are evaluated on the Area Under the Receiver Operating Characteristic Curve (AUC-ROC). This metric measures the ability of the classifier to distinguish between the two classes (malignant and benign) across all possible classification thresholds. The curve is created by plotting the true positive rate against the false positive rate at various threshold settings. The area under this curve represents the model's performance, where a value of 1.0 indicates a perfect classifier and 0.5 indicates a model with no discriminative ability.",
+        "Metric Name": "Area Under the ROC Curve (AUC)",
+        "Metric Direction": true,
+        "Longer time limit required": "True"
+    }
+
+    # Data path:
+    /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/siim-isic-melanoma-classification/prepared/public
+    
+    ## File tree:
+    ```
+    ./
+    ├── jpeg/
+    │   ├── test/
+    │   │   ├── ISIC_0052212.jpg (138.5 kB)
+    │   │   ├── ISIC_0076545.jpg (523.9 kB)
+    │   │   ├── ... (+4140 more files)
+    │   ├── train/
+    │   │   ├── ISIC_0015719.jpg (1.9 MB)
+    │   │   ├── ISIC_0068279.jpg (215.8 kB)
+    │   │   ├── ... (+28982 more files)
+    ├── test/
+    │   ├── ISIC_0052212.dcm (1.5 MB)
+    │   ├── ISIC_0076545.dcm (4.0 MB)
+    │   ├── ... (+4140 more files)
+    ├── tfrecords/
+    │   ├── test00-2071.tfrec (579.6 MB)
+    │   ├── test01-2071.tfrec (583.5 MB)
+    │   ├── ... (+14 more files)
+    ├── train/
+    │   ├── ISIC_0015719.dcm (2.4 MB)
+    │   ├── ISIC_0068279.dcm (1.3 MB)
+    │   ├── ... (+28982 more files)
+    ├── train.csv (1.8 MB)
+    ├── test.csv (187.9 kB)
+    ├── sample_submission.csv (62.1 kB)
+    ├── description.md (13.4 kB)```
+    
+    ### Image dimension analysis:
+    - Sampled 1000 images (successfully read 1000, failed 0)
+    
+    #### Width statistics (pixels):
+      - Minimum: 640
+      - Maximum: 6000
+      - Mean: 4101.41
+      - Median: 5184
+      - Standard deviation: 2062.53
+    
+    #### Height statistics (pixels):
+      - Minimum: 480
+      - Maximum: 5184
+      - Mean: 2720.69
+      - Median: 3456
+      - Standard deviation: 1411.37
+    
+    #### Aspect ratio (width/height) statistics:
+      - Minimum: 0.664
+      - Maximum: 1.778
+      - Mean: 1.532
+      - Median: 1.500
+      - Standard deviation: 0.156
+    
+    
+    ## File details:
+    
+     (Showing details for representative files out of many)
+    
+    ### sample_submission.csv: 
+    #### 1.DataFrame preview:
+    It has 4142 rows and 2 columns.
+    Here is some information about the columns:
+    image_name (object) has 4142 unique values. Some example values: ['ISIC_9998965', 'ISIC_0052212', 'ISIC_0076545', 'ISIC_0085172']
+    target (int64) has 1 unique values: [0]
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+         image_name  target
+    0  ISIC_0052212       0
+    1  ISIC_0076545       0
+    2  ISIC_0085172       0
+    
+    ### test.csv: 
+    #### 1.DataFrame preview:
+    It has 4142 rows and 5 columns.
+    Here is some information about the columns:
+    age_approx (float64) has range: 15.00 - 90.00, 9 nan values
+    anatom_site_general_challenge (object) has 6 unique values: ['lower extremity', 'upper extremity', 'torso', 'head/neck', nan, 'oral/genital', 'palms/soles']
+    image_name (object) has 4142 unique values. Some example values: ['ISIC_9998965', 'ISIC_0052212', 'ISIC_0076545', 'ISIC_0085172']
+    patient_id (object) has 1457 unique values. Some example values: ['IP_4419570', 'IP_4479736', 'IP_7279968', 'IP_6245507']
+    sex (object) has 2 unique values: ['female', 'male', nan]
+    Columns containing NaN values: sex, age_approx, anatom_site_general_challenge
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+         image_name  patient_id     sex  age_approx anatom_site_general_challenge
+    0  ISIC_0052212  IP_2842074  female        50.0               lower extremity
+    1  ISIC_0076545  IP_9802602    male        55.0               upper extremity
+    2  ISIC_0085172  IP_1705144  female        50.0               lower extremity
+    
+    ### train.csv: 
+    #### 1.DataFrame preview:
+    It has 28984 rows and 8 columns.
+    Here is some information about the columns:
+    age_approx (float64) has range: 0.00 - 90.00, 59 nan values
+    anatom_site_general_challenge (object) has 6 unique values: ['head/neck', 'upper extremity', 'lower extremity', 'torso', nan, 'palms/soles', 'oral/genital']
+    benign_malignant (object) has 2 unique values: ['benign', 'malignant']
+    diagnosis (object) has 9 unique values: ['unknown', 'nevus', 'melanoma', 'seborrheic keratosis', 'lichenoid keratosis', 'lentigo NOS', 'solar lentigo', 'cafe-au-lait macule', 'atypical melanocytic proliferation']
+    image_name (object) has 28984 unique values. Some example values: ['ISIC_9999806', 'ISIC_2637011', 'ISIC_0015719', 'ISIC_0068279']
+    patient_id (object) has 2056 unique values. Some example values: ['IP_4382720', 'IP_0656529', 'IP_4938382', 'IP_7279968']
+    sex (object) has 2 unique values: ['male', 'female', nan]
+    target (int64) has 2 unique values: [0, 1]
+    Columns containing NaN values: sex, age_approx, anatom_site_general_challenge
+    #### 2.DataFrame preview:(only show the first 3 rows and 15 columns)
+         image_name  patient_id     sex  age_approx anatom_site_general_challenge diagnosis benign_malignant  target
+    0  ISIC_2637011  IP_7279968    male        45.0                     head/neck   unknown           benign       0
+    1  ISIC_0015719  IP_3075186  female        45.0               upper extremity   unknown           benign       0
+    2  ISIC_0068279  IP_6890425  female        45.0                     head/neck   unknown           benign       0
+
+    # Other Requirements
+     - Code Generation Requirements:
+        - Library Imports: All libraries must be imported at the beginning of the file. Implicit imports are prohibited.
+        - Feature Processing: Handle missing values and features conservatively. For uncertain feature types, first determine the type before selecting imputation and processing strategies.
+        - Computing resource: Provides sufficient CPU computing power and 1 A800 graphics cards, you can use them freely if necessary.
+        - CPU resources are relatively sufficient, so it is appropriate to run more workers during data processing and loading.
+        - Maximize GPU utilization and estimate a suitable batch size based on the number of model parameters.
+        - Try to use the latest models, which often bring better results. For example, efficient_net is often better than restnet, and the larger size of efficient_net, such as large, is also better than base.
+        - If you train a deep learning model, do not train for more than 10 epochs at the beginning. You can adjust it according to the results of the code execution. If it is underfitting, you can increase the epochs.
+        - For a deep learning task, predictions need to be made after each epoch of training and the corresponding submission_epoch.csv file needs to be generated. The storage path should remain consistent. For example, for a task that trains for 3 epochs, the first round of training predictions is saved as `submission_1.csv`, the second round of training predictions is saved as `submission_2.csv`, and so on...
+        - You need to save the trained model to the specified save address above. The model should be saved in the format of the `transformers` library. Furthermore, ensure that each epoch's model is saved in a folder following the naming convention `model_name_epoch`.
+        - If you intend to use certain models, you should use the name from Hugging Face rather than a local directory.
+        - Prioritize the `transformers` library over `timm` for all model loading operations.
+        - When a pre-trained model download from a remote repository like Hugging Face fails, attempt to use a different model rather than retrying the same one.
+        - **Do not use exception handling mechanisms in any data loading steps; expose potential issues instead, and never fabricate submission files.**
+        
+     - Code Style:
+        - Clear variable naming
+        - Optional type annotations
+        - Brief comments for key steps
+        - Print information about key steps instead of using tqdm to print the training process
+        - All variables and standard library functions must be defined before use
+        - Directly generate a complete, end-to-end CSV output
+        - Provide executable code that runs without errors and produces the **submission.csv** file as required
+        Suppress all warnings to avoid displaying warning messages
+    
+    ## Ultimate Goal
+     - Maximize your score in this task/competition and rank higher on the leaderboard. Apply a combination of techniques (machine learning knowledge and Kaggle competition tricks) to achieve this.
+    
+    ## File Paths
+     - Submission file Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/siim-isic-melanoma-classification/submission.csv
+     - Model Save path: /mnt/cfs_bj_mt/workspace/gezengle/fm/agent/workspace/baidu/acgbenchmark/alpha_evolve/siim-isic-melanoma-classification/model_save
+     - Read path: /mnt/cfs_bj_mt/workspace/caolizhe/public/mlebench-competitions/siim-isic-melanoma-classification/prepared/public/
+
+
+    
+  language: python
+  strategy: example_strategy  # Strategy name: standard, exploration, etc.
+
+  # Execution scope
+  max_iterations: 50
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  experience_retrieval:
+    enabled: true
+    retrieval_mode: combined
+    similarity_threshold: 0.7
+    rrf_k: 60
+
+    # Island model (multi-population evolution)
+  island:
+    num_islands: 1
+    island_size: 100
+    migration_interval: 5
+    migration_size: 1
+    migration_topology: ring
+    reset_interval: 15
+    reset_size: 1
+
+# =============================================================================
+# Infrastructure Configuration - HOW to run
+# =============================================================================
+infrastructure:
+  # LLM Configuration
+  llm:
+    provider: openai
+    api_base: http://211.23.3.237:27544/v1
+    model: gemini-3-pro-preview
+    api_key: YOUR_API_KEY  # Replace with your API key or use environment variable
+    temperature: 0.7
+    max_tokens: 64000
+    timeout: 3600
+
+  # Storage Configuration
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  # Logger Configuration
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  # Execution Environment
+  env:
+    type: local
+    timeout: 14400
+    # GPU Usage (Optional)
+    gpu_ids: [1]      # Available GPU IDs (empty list = no GPU)
+    gpu_num_each_run: 1.0      # Number of GPUs per evaluation task
+    input_params:
+      competition_name: siim-isic-melanoma-classification
+  
+  # Monitoring Configuration (Optional)
+  monitor:
+    enabled: true  # Set to false to disable monitoring
+    type: wandb  # Monitoring backend type (currently only 'wandb' is supported)
+
+    # WandB-specific settings
+    wandb:
+      project: famou-mlebench  # WandB project name
+      entity: null  # WandB entity (username or team), null for default
+      run_name: null  # Run name, null for auto-generation
+      group: null  # Group name for grouping related runs
+      tags:
+        - mlebench
+        - creative_exploration
+      notes: "Circle packing optimization with creative exploration strategy"
+
+      # Async logging settings
+      async_mode: true  # Enable asynchronous (non-blocking) logging
+      num_workers: 4  # Number of async worker threads
+      queue_size: 100  # Max queue size for async logging
+
+      # What to monitor
+      track_metrics:
+        islands: true  # Track metrics for each island
+        performance: true  # Track performance metrics (best, avg, median scores)
+        population: true  # Track population metrics (size, generations)
+        diversity: true  # Track diversity metrics (genetic, code diversity)
+        cost: true  # Track LLM API costs
+      track_artifacts: true  # Track artifacts (best programs, visualizations)
+      track_lineage_tree: true  # Track lineage tree visualization
+      checkpoint_interval: 1  # Record metrics every N iterations
+
+  # langfuse configuration (optional)
+  # langfuse:
+  #   enabled: false  # Set to false to disable Langfuse integration
+  #   public_key: your_public_key
+  #   secret_key: your_secret_key
+  #   base_url: https://us.cloud.langfuse.com
+
+
+
+# =============================================================================
+# Module Parameters (optional) - ALGORITHM parameters
+# =============================================================================
+

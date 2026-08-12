@@ -1,0 +1,21 @@
+{
+  "model": "gbdt",
+  "tag": "_same_pipe",
+  "max_steps": null,
+  "n_seeds": 24,
+  "step_len": null,
+  "mean_dev": 0.07163,
+  "mean_promo": 0.07208,
+  "sd_noise_dev": 0.00201,
+  "sd_noise_promo": 0.00319,
+  "range_dev": [
+    0.06814,
+    0.07553
+  ],
+  "spearman_dev_promo": -0.206,
+  "target_sd_noise": 0.003,
+  "verdict": "FAIL",
+  "implied_selection_K100": 0.00707,
+  "secs_per_seed_p50": 241.89999999999998,
+  "wall_secs": 646
+}

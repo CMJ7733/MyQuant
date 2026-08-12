@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlphaSAGE 交互式解读 · ICLR 2026</title>
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#ffffff; --panel:#fafbfc; --panel2:#eef1f5; --line:#d8dee4;
+    --ink:#1f2328; --dim:#57606a; --faint:#8b949e;
+    --accent:#5b45d6; --accent2:#9a6700; --good:#1a7f37; --bad:#cf222e;
+    --cyan:#0e7c86;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-size:15px;line-height:1.65;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    padding:0 0 60px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  header{border-bottom:1px solid var(--line);padding:36px 0 26px;margin-bottom:28px}
+  h1{font-size:27px;letter-spacing:-.02em;font-weight:650}
+  h1 .sub{color:var(--accent);font-weight:400}
+  .meta{color:var(--dim);font-size:13.5px;margin-top:9px}
+  .meta code{font-family:var(--mono);color:var(--faint)}
+  h2{font-size:19px;margin:0 0 6px;font-weight:620;letter-spacing:-.01em}
+  h3{font-size:14.5px;color:var(--dim);font-weight:600;margin:22px 0 10px;
+     text-transform:uppercase;letter-spacing:.06em}
+  p{color:#3d444d}
+  .lede{color:var(--dim);font-size:14px;margin-bottom:20px}
+  nav{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:30px;flex-wrap:wrap}
+  nav button{background:none;border:none;color:var(--dim);padding:11px 17px;cursor:pointer;
+    font-size:14.5px;font-family:inherit;border-bottom:2px solid transparent;transition:.15s}
+  nav button:hover{color:var(--ink)}
+  nav button.on{color:var(--accent);border-bottom-color:var(--accent)}
+  section{display:none} section.on{display:block}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:20px 22px;margin:16px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .ctl{display:flex;align-items:center;gap:14px;margin:11px 0;flex-wrap:wrap}
+  .ctl label{width:180px;font-size:13.5px;color:var(--dim);flex-shrink:0}
+  .ctl input[type=range]{flex:1;min-width:140px;accent-color:var(--accent);height:4px}
+  .ctl .val{font-family:var(--mono);color:var(--accent);min-width:78px;font-size:13.5px;text-align:right}
+  select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;
+    padding:6px 10px;font-family:inherit;font-size:13.5px}
+  .toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13.5px;
+    color:var(--dim);user-select:none;margin-right:16px}
+  .toggle input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+  table{width:100%;border-collapse:collapse;font-size:13.2px;margin-top:8px}
+  th,td{padding:7px 9px;text-align:right;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  td:first-child,th:first-child{text-align:left}
+  td.num{font-family:var(--mono)}
+  tr.best td{background:rgba(91,69,214,.10)}
+  tr.best td.num{color:var(--accent);font-weight:600}
+  .tag{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:4px;
+    background:var(--panel2);color:var(--faint);margin-left:6px;font-family:var(--mono)}
+  .tag.warn{background:rgba(207,34,46,.12);color:var(--bad)}
+  .bar{height:9px;background:var(--panel2);border-radius:5px;overflow:hidden;display:block;width:100%}
+  .bar>i{display:block;height:100%;background:var(--accent);border-radius:5px;transition:width .3s}
+  .bar>i.alt{background:var(--cyan)} .bar>i.warn{background:var(--bad)} .bar>i.ok{background:var(--good)}
+  .note{border-left:2px solid var(--accent2);padding:10px 0 10px 15px;color:var(--dim);
+    font-size:13.5px;margin:16px 0;background:rgba(154,103,0,.07)}
+  .note b{color:var(--accent2);font-weight:600}
+  .warnbox{border-left:2px solid var(--bad);padding:10px 0 10px 15px;color:var(--dim);
+    font-size:13.5px;margin:16px 0;background:rgba(207,34,46,.06)}
+  .warnbox b{color:var(--bad);font-weight:600}
+  .kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin:14px 0}
+  .kpi div{background:var(--panel2);border-radius:7px;padding:12px 14px}
+  .kpi .k{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+  .kpi .v{font-family:var(--mono);font-size:20px;color:var(--accent);margin-top:3px;font-weight:600}
+  .kpi .d{font-size:11.5px;color:var(--dim);margin-top:2px}
+  .mono{font-family:var(--mono);font-size:12.8px;line-height:1.9;color:var(--dim)}
+  .mono .hl{color:var(--accent2)} .mono .ac{color:var(--accent)}
+  .dist{display:flex;gap:2px;align-items:flex-end;height:150px;margin:10px 0;
+        border-bottom:1px solid var(--line);padding-bottom:1px}
+  .dist div{flex:1;background:var(--faint);border-radius:2px 2px 0 0;min-height:1px;transition:height .35s}
+  .dist div.mode{background:var(--accent)}
+  .lbl{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-bottom:4px}
+  .tree{font-family:var(--mono);font-size:12.5px;line-height:1.8;white-space:pre;color:var(--dim)}
+  .tree .op{color:var(--accent)} .tree .ft{color:var(--cyan)} .tree .wd{color:var(--accent2)}
+  .chk{font-family:var(--mono);font-size:16px}
+  .chk.y{color:var(--good)} .chk.n{color:var(--bad)}
+  footer{color:var(--faint);font-size:12.5px;border-top:1px solid var(--line);margin-top:40px;padding-top:18px}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>AlphaSAGE <span class="sub">· 用 GFlowNet 做结构感知的 alpha 挖掘</span></h1>
+  <div class="meta">
+    Binqi Chen 等（北京大学 / 正仁量化 / Baruch College / UBC）· ICLR 2026 ·
+    <code>arXiv:2509.25055v3</code> · <code>github.com/BerkinChen/AlphaSAGE</code>
+  </div>
+  <div class="meta" style="margin-top:12px;color:#3d444d">
+    核心主张：量化研究要的从来不是「<b>那一个</b>最好的因子」，而是「<b>一组</b>各不相同、都还不错的因子」——
+    因为组合的价值来自低相关性。既然目标是分布，就别用最大化期望回报的 RL。
+  </div>
+</header>
+
+<nav>
+  <button class="on" data-t="collapse">模式坍缩</button>
+  <button data-t="encode">结构编码</button>
+  <button data-t="reward">奖励设计</button>
+  <button data-t="res">实验结果</button>
+</nav>
+
+<!-- ============ TAB 1 ============ -->
+<section id="collapse" class="on">
+  <h2>为什么 <code>max E[R]</code> 是错的目标</h2>
+  <p class="lede">
+    下面是一个玩具公式空间（4 算子 × 5 特征 × 3 窗口 = 60 个 alpha），
+    其中 4 个是分离的高奖励模式。拖动滑块，看两种目标函数学出的分布有什么根本差别。
+  </p>
+
+  <div class="panel">
+    <div class="ctl">
+      <label>RL 的贪心程度（温度倒数）</label>
+      <input type="range" id="greedy" min="1" max="60" step="1" value="30">
+      <span class="val" id="greedyv">30</span>
+    </div>
+    <p style="font-size:13px;color:var(--faint)">
+      RL 训练得越久，策略越贪心，分布越尖锐——这不是 bug，
+      <b style="color:var(--dim)"><code>max E[R]</code> 的唯一最优解就是确定性策略</b>。
+    </p>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h3>REINFORCE（标准 RL）</h3>
+      <div class="lbl">60 个 alpha 的采样概率</div>
+      <div class="dist" id="distRL"></div>
+      <div id="kpiRL"></div>
+    </div>
+    <div class="panel">
+      <h3>GFlowNet（P(α) ∝ R(α)）</h3>
+      <div class="lbl">60 个 alpha 的采样概率</div>
+      <div class="dist" id="distGF"></div>
+      <div id="kpiGF"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>四个高奖励模式的采样概率</h3>
+    <table>
+      <thead><tr><th>alpha</th><th>奖励 R</th><th>目标 R/Z</th><th>RL</th><th>GFlowNet</th></tr></thead>
+      <tbody id="modeTab"></tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <b>这不是调参问题。</b>RL 的目标函数 <code>max E[R]</code> 的唯一最优解，就是把全部概率质量
+    放在奖励最高的那一个 α 上。你训练得越好，坍缩得越彻底。
+    GFlowNet 学的是分布：奖励 0.85 的被采到的概率约是 0.55 的 1.5 倍，但后者<b>依然会被采到</b>。
+  </div>
+  <div class="note">
+    <b>实测验证：</b><code>code/gflownet_diversity_demo.py</code> 用完全相同的策略参数化训练两种目标，
+    唯一变量是损失函数。结果：RL 有效发现 1/4 个模式（KL=3.30），GFlowNet 发现 4/4（KL=0.0000）。
+  </div>
+  <div class="warnbox">
+    <b>论文没有验证的一环：</b>核心因果链是「GFlowNet → 因子更多样 → 组合表现更好」。
+    起点和终点都验证了，但<b>中间那一环从未被测量</b>——全文没有一张「因子池内相关系数」的图。
+    存在一个说得通的替代解释：GFlowNet 的提升可能主要来自它是个<b>更好的优化器</b>（TB loss 的信用分配
+    比 PPO 更直接），而不是来自多样性。
+  </div>
+</section>
+
+<!-- ============ TAB 2 ============ -->
+<section id="encode">
+  <h2>AST + RGCN：不变性到底从哪来</h2>
+  <p class="lede">
+    论文说「AST 表示对语义上无关紧要的语法变体是不变的」。但这个不变性其实<b>不来自 AST 本身</b>，
+    而来自 GNN 邻居聚合的置换不变性——而置换不变性是把双刃剑。
+  </p>
+
+  <div class="panel">
+    <h3>同一个 alpha 的三种表示</h3>
+    <div class="grid2">
+      <div>
+        <div class="lbl">(a) 公式 / (c) 逆波兰式（现有方法用的）</div>
+        <div class="mono">
+<span class="ac">Log(TsStd($low, 10d))</span><br><br>
+RPN: BEG <span style="color:var(--cyan)">$low</span> <span class="hl">10d</span> TsStd Log SEP
+        </div>
+      </div>
+      <div>
+        <div class="lbl">(b) 表达式树（AlphaSAGE 用的）</div>
+        <div class="tree">    <span class="op">Log</span>
+     │
+   <span class="op">TsStd</span>
+   ╱     ╲
+<span class="ft">$low</span>    <span class="wd">10d</span>
+  (数据边) (窗口边)</div>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--dim);margin-top:14px">
+      <b>RGCN 而非普通 GCN 的理由</b>：<code>TsStd→$low</code>（对哪个序列操作）和
+      <code>TsStd→10d</code>（用多长的窗口）是<b>两种不同类型的关系</b>，必须用不同的权重矩阵
+      <code>W_r</code> 处理。普通 GCN 对所有边一视同仁，做不到这一点。
+    </p>
+  </div>
+
+  <div class="panel">
+    <h3>各编码方案能不能区分「该区分的」</h3>
+    <div class="ctl" style="margin-bottom:14px">
+      <label style="width:auto">边类型方案</label>
+      <select id="scheme">
+        <option value="seq">序列编码器（LSTM on RPN）</option>
+        <option value="untyped">RGCN · 所有边同一类型</option>
+        <option value="positional">RGCN · 按参数位置区分</option>
+        <option value="role">RGCN · 按角色区分（论文提到的动机）</option>
+        <option value="rolepos" selected>RGCN · 角色 + 非交换算子加位置</option>
+      </select>
+    </div>
+    <table>
+      <thead><tr><th>公式对</th><th>语义</th><th style="width:80px">应当</th><th style="width:70px">实际</th></tr></thead>
+      <tbody id="invTab"></tbody>
+    </table>
+    <div id="invScore" style="margin-top:14px"></div>
+  </div>
+
+  <div class="warnbox">
+    <b>论文没说清的地方：</b>「AST 表示对语法变体不变」这句话，实际上取决于<b>你怎么定义 RGCN 的边类型</b>。
+    论文只提了 <code>data</code> / <code>window</code> 这一个维度——它解决了窗口参数的问题，
+    但<b>仍无法区分 <code>Sub(a,b)</code> 与 <code>Sub(b,a)</code></b>（邻居求和是置换不变的，
+    会把这两个判成相同，而这是错的）。复现时必须自己把交换律处理对。
+    实测见 <code>code/alpha_ast_demo.py</code>。
+  </div>
+</section>
+
+<!-- ============ TAB 3 ============ -->
+<section id="reward">
+  <h2>三项奖励与退火</h2>
+  <p class="lede">
+    <code>R(α, T) = R_IC(α) + λ(T)·R_SA(α) + η(T)·R_NOV(α)</code>，
+    两个权重都随训练线性退火到 0。拖动训练进度看权重变化。
+  </p>
+
+  <div class="panel">
+    <div class="ctl">
+      <label>训练进度 T / T_anneal</label>
+      <input type="range" id="prog" min="0" max="100" step="1" value="0">
+      <span class="val" id="progv">0%</span>
+    </div>
+    <div class="kpi" id="annealKpi"></div>
+    <div style="margin-top:10px">
+      <div class="lbl">R_IC 权重（恒为 1）</div><div class="bar"><i style="width:100%"></i></div>
+      <div class="lbl" style="margin-top:10px">λ(T) · R_SA　　λ_max = 1.0</div>
+      <div class="bar"><i class="alt" id="barSA" style="width:100%"></i></div>
+      <div class="lbl" style="margin-top:10px">η(T) · R_NOV　　η_max = 0.3</div>
+      <div class="bar"><i class="ok" id="barNOV" style="width:30%"></i></div>
+    </div>
+    <p style="font-size:13px;color:var(--dim);margin-top:14px">
+      <b>退火的两重作用</b>：① 论文讲的「探索 → 利用」课程——早期先把表示学好、先铺开探索，
+      后期只剩纯粹的预测力；② <b>论文没讲的</b>——<code>R_NOV</code> 依赖动态更新的 <code>F_known</code>，
+      本身带非平稳性。退火把非平稳性限制在训练早期，保证后期收敛到平稳目标 <code>R = R_IC</code>。
+    </p>
+  </div>
+
+  <div class="panel">
+    <h3>三项各司其职</h3>
+    <table>
+      <tr><td style="width:110px"><b>R_IC</b></td>
+        <td style="text-align:left;color:#3d444d"><code>E_d[Cov(α(X_d),y_d)/√(Var·Var)]</code><br>
+        <span style="color:var(--faint)">终端性能——「这个因子有用吗」</span></td></tr>
+      <tr><td><b>R_SA</b></td>
+        <td style="text-align:left;color:#3d444d"><code>exp(−Σ_j w_ij · d_behav(α_i,α_j))</code><br>
+        <span style="color:var(--faint)">在<b>嵌入空间</b>找 K 近邻，看它们在<b>行为空间</b>离得多远。
+        用行为相似度监督结构嵌入——「我对搜索空间的理解对吗」</span></td></tr>
+      <tr><td><b>R_NOV</b></td>
+        <td style="text-align:left;color:#3d444d"><code>1 − max<sub>α'∈F_known</sub> |IC(α, α')|</code><br>
+        <span style="color:var(--faint)">与已知因子低相关——「这个因子和已有的重复吗」。
+        <b>最容易单独抄走的组件</b>，不依赖 GFlowNet</span></td></tr>
+    </table>
+  </div>
+
+  <div class="warnbox">
+    <b>实测发现：R_SA 与 R_NOV 存在结构性负耦合。</b><br>
+    论文 §3.4 专门论证三项「由构造上对期望行为同号，没有显式的负耦合」。但注意——
+    <b>R_SA 的 K 近邻正是从因子库里找的</b>。一个行为上真正新颖的 alpha，它的嵌入近邻（都是池成员）
+    在行为上必然离它很远 → <code>d_behav</code> 大 → <b>R_SA 被压低</b>。
+    <br><br>
+    <code>code/alpha_ast_demo.py</code> 的量化检验（12 因子池分 3 个行为族，60 个新颖度连续变化的候选）：
+    <b>corr(R_SA, R_NOV) = −0.473</b>，强负相关。而权重上 λ_max=1.0 是 η_max=0.3 的 3.3 倍。
+    <br><br>
+    <b>保留意见</b>：这是合成数据上的定性演示，不是证伪。但方向真实存在，且可能解释论文自己观察到的
+    「新颖性权重过大时性能下滑」——不是新颖性有害，而是它把 R_SA 挤掉了。
+  </div>
+
+  <div class="note">
+    <b>另一个张力：</b>如果 GFlowNet 真的按 <code>P ∝ R_IC</code> 采样，理论上就已经能给出多样的因子，
+    <b>为什么还需要 R_NOV 这个显式去重项？</b>它的存在其实暗示了实践中 GFlowNet 的多样性还不够。
+    论文没有讨论这一点。
+  </div>
+</section>
+
+<!-- ============ TAB 4 ============ -->
+<section id="res">
+  <h2>实验结果</h2>
+  <p class="lede">论文表 1 与表 2 的全部数字，未做改动。</p>
+
+  <div class="panel">
+    <div class="ctl">
+      <label>数据集</label>
+      <select id="rds">
+        <option value="0" selected>CSI300</option><option value="1">CSI500</option>
+        <option value="2">CSI1000</option><option value="3">S&amp;P500</option>
+      </select>
+      <label style="width:auto;margin-left:10px">指标</label>
+      <select id="rmet">
+        <option value="0">IC</option><option value="1">ICIR</option>
+        <option value="2">RIC</option><option value="3">RICIR</option>
+        <option value="4" selected>AR 年化收益</option><option value="5">MDD 最大回撤</option>
+        <option value="6">SR 夏普</option>
+      </select>
+    </div>
+    <table>
+      <thead><tr><th>方法</th><th style="width:46%"></th><th id="mh">AR</th></tr></thead>
+      <tbody id="resTab"></tbody>
+    </table>
+    <div id="resNote"></div>
+  </div>
+
+  <div class="warnbox">
+    <b>两个市场的回测规则不同，SR 不可跨市场比较。</b><br>
+    CSI300/500：每日买入 top <b>20%</b>，持有 20 天，<b>仅做多</b>（A 股做空受限）。<br>
+    S&amp;P500：买入 top <b>10%</b> + 卖空 bottom <b>10%</b>，各持有 20 天，<b>多空组合</b>。<br>
+    这就是为什么 S&amp;P500 的 SR 高达 6.32 而 CSI300 只有 1.71——多空组合对冲掉了市场风险。
+    事实上 S&amp;P500 上的 IC（0.052）<b>低于</b> CSI1000（0.076）。无风险利率设为 r_f = 0。
+  </div>
+
+  <div class="panel">
+    <h3>消融（CSI300）</h3>
+    <table>
+      <thead><tr><th>组件组合</th><th style="width:26%">IC</th><th>IC</th><th>RICIR</th><th>AR</th><th>MDD</th><th>SR</th></tr></thead>
+      <tbody id="abTab"></tbody>
+    </table>
+    <div style="margin-top:14px;font-size:13px;color:var(--dim)">
+      <p style="margin-bottom:8px"><b style="color:var(--good)">① GNN 是最大的单项提升</b>：
+      IC 0.046 → 0.070，SR −0.11 → 1.25。全文其他所有组件加起来的提升，都不如把 LSTM 换成 GNN。</p>
+      <p style="margin-bottom:8px"><b style="color:var(--bad)">② 只加 ES 会彻底失效</b>：
+      AR 从 3.63% 掉到 <b>−0.47%</b>，SR 变负。论文解释是「ES 需要更强的编码器」——
+      合理但含糊，没有验证。<b>ES 和 GNN 是耦合的，不能单独启用。</b></p>
+      <p><b style="color:var(--accent2)">③ 熵正则让 RICIR 反而下降</b>：0.614 → 0.583，
+      虽然 IC/AR/SR 都涨了。论文只说「整体最好」，没讨论这个回退。
+      可能是熵正则保留了一些排序稳定性较差、但与主流因子低相关的模式。</p>
+    </div>
+  </div>
+
+  <div class="warnbox">
+    <b>「所有相关性指标第一」的说法不准确。</b>论文正文写 “ranks first on all correlation metrics”，
+    但表 1 里至少两处例外：<b>CSI500 的 ICIR</b>（AlphaAgent 0.396 &gt; 0.379）、
+    <b>CSI1000 的 RICIR</b>（AlphaForge 0.742 &gt; 0.736）。
+    另外 CSI500 上 IC 只赢 0.001（0.054 vs 0.053）——真正的差距在组合指标（SR 1.20 vs 0.93）。
+    <br><br>
+    <b>但这其实支持论文的理论</b>：单因子质量几乎打平，组合表现拉开明显差距，
+    恰恰说明价值来自因子间的<b>低相关性</b>。可惜论文没把这一点讲出来，也没测量它。
+  </div>
+</section>
+
+<footer>
+  本页所有数值均取自论文正文与表格，未做估算或补全；标注「实测」的结论来自本目录下可运行的 demo。<br>
+  配套材料：<code>summary.md</code> · <code>insights.md</code> · <code>method.md</code> ·
+  <code>mental-model.md</code> · <code>qa.md</code> ·
+  <code>code/gflownet_diversity_demo.py</code> · <code>code/alpha_ast_demo.py</code>
+</footer>
+</div>
+
+<script>
+document.querySelectorAll('nav button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('nav button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('section').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); document.getElementById(b.dataset.t).classList.add('on');
+  };
+});
+const $=id=>document.getElementById(id);
+
+/* ========== TAB 1: mode collapse ========== */
+const OPS=['Log','TsStd','Rank','Mean'], FEATS=['$close','$open','$high','$low','$volume'],
+      WINS=['5d','10d','20d'];
+const ALPHAS=[];
+for(const o of OPS) for(const f of FEATS) for(const w of WINS) ALPHAS.push([o,f,w]);
+const MODES={'TsStd|$low|10d':1.00,'Rank|$volume|20d':0.85,'Mean|$close|5d':0.70,'Log|$high|20d':0.55};
+const BG=0.03;
+const key=a=>a.join('|');
+const rw=a=>MODES[key(a)]!==undefined?MODES[key(a)]:BG;
+const Z=ALPHAS.reduce((s,a)=>s+rw(a),0);
+
+function distGFlow(){ return ALPHAS.map(a=>rw(a)/Z); }
+function distRLf(beta){
+  // 贪心程度 beta 越大越尖锐: softmax(beta * R)
+  const e=ALPHAS.map(a=>Math.exp(beta*rw(a)));
+  const s=e.reduce((x,y)=>x+y,0);
+  return e.map(v=>v/s);
+}
+function entropy(p){ return -p.reduce((s,v)=>s+(v>1e-12?v*Math.log(v):0),0); }
+function klTo(p,q){ let s=0; for(let i=0;i<p.length;i++) if(p[i]>1e-12) s+=p[i]*Math.log(p[i]/Math.max(q[i],1e-30)); return s; }
+
+function drawDist(el,probs){
+  const mx=Math.max(...probs);
+  el.innerHTML=ALPHAS.map((a,i)=>{
+    const isMode=MODES[key(a)]!==undefined;
+    return `<div class="${isMode?'mode':''}" style="height:${Math.max(1,100*probs[i]/mx)}%"
+      title="${a[0]}(${a[1]}, ${a[2]})  P=${probs[i].toFixed(4)}  R=${rw(a).toFixed(2)}"></div>`;
+  }).join('');
+}
+function kpiBlock(probs){
+  const found=ALPHAS.filter((a,i)=>MODES[key(a)]!==undefined&&probs[i]>0.01).length;
+  const eff=Math.exp(entropy(probs));
+  const tgt=distGFlow();
+  return `<div class="kpi">
+    <div><div class="k">发现的模式</div><div class="v" style="color:${found===4?'var(--good)':'var(--bad)'}">${found}/4</div><div class="d">P &gt; 1%</div></div>
+    <div><div class="k">有效 alpha 数</div><div class="v">${eff.toFixed(1)}</div><div class="d">exp(熵) / 60</div></div>
+    <div><div class="k">KL(目标‖学到)</div><div class="v">${klTo(tgt,probs).toFixed(3)}</div><div class="d">越小越接近 R/Z</div></div>
+  </div>`;
+}
+function renderCollapse(){
+  const beta=+$('greedy').value; $('greedyv').textContent=beta;
+  const pRL=distRLf(beta), pGF=distGFlow();
+  drawDist($('distRL'),pRL); drawDist($('distGF'),pGF);
+  $('kpiRL').innerHTML=kpiBlock(pRL); $('kpiGF').innerHTML=kpiBlock(pGF);
+  $('modeTab').innerHTML=Object.keys(MODES).sort((a,b)=>MODES[b]-MODES[a]).map(k=>{
+    const i=ALPHAS.findIndex(a=>key(a)===k), a=ALPHAS[i];
+    return `<tr><td>${a[0]}(${a[1]}, ${a[2]})</td><td class="num">${MODES[k].toFixed(2)}</td>
+      <td class="num">${pGF[i].toFixed(4)}</td>
+      <td class="num" style="color:${pRL[i]<0.01?'var(--bad)':'var(--ink)'}">${pRL[i].toFixed(4)}</td>
+      <td class="num" style="color:var(--accent)">${pGF[i].toFixed(4)}</td></tr>`;
+  }).join('');
+}
+$('greedy').oninput=renderCollapse;
+
+/* ========== TAB 2: encoding invariance ========== */
+/* 每个方案对 6 组公式对的判定（预先按 demo 的实际运行结果填入） */
+const CASES=[
+  ['Add($close,$open) vs Add($open,$close)','加法可交换',true],
+  ['Mul($close,$volume) vs Mul($volume,$close)','乘法可交换',true],
+  ['Sub($close,$open) vs Sub($open,$close)','减法不可交换',false],
+  ['Div($close,$volume) vs Div($volume,$close)','除法不可交换',false],
+  ['TsStd($low,10d) vs TsStd($low,20d)','窗口不同',false],
+  ['Log(TsStd($low,10d)) vs TsStd(Log($low),10d)','嵌套顺序不同',false],
+];
+/* 每个方案判定为"相同"的位置 */
+const SAME={
+  seq:        [false,false,false,false,false,false],
+  untyped:    [true, true, true, true, false,false],
+  positional: [false,false,false,false,false,false],
+  role:       [true, true, true, true, false,false],
+  rolepos:    [true, true, false,false,false,false],
+};
+const SCHEME_NOTE={
+  seq:'序列编码器对 token 顺序敏感 —— 所有公式对都判为「不同」，交换律的两组全错。这正是论文批评现有方法的地方。',
+  untyped:'邻居求和是置换不变的 —— Add/Mul 对了，但 Sub/Div 也被判成相同，这是<b>错的</b>。不变性过头了。',
+  positional:'完全按参数位置区分 —— Sub/Div 对了，但 Add/Mul 的交换律丢了，退化成和序列编码器一样。',
+  role:'<b>论文明确提到的动机</b>：区分 data 边与 window 边。它解决了窗口参数的问题（第 5、6 行），但仍无法区分 Sub(a,b) 与 Sub(b,a)。',
+  rolepos:'交换律算子的 data 参数不编位置，其余一律编位置 —— <b>6/6 全对</b>。这是论文没写、但复现时必须自己做对的部分。',
+};
+function renderInv(){
+  const s=$('scheme').value, same=SAME[s];
+  let ok=0;
+  $('invTab').innerHTML=CASES.map((c,i)=>{
+    const correct=(same[i]===c[2]); if(correct) ok++;
+    return `<tr><td style="font-family:var(--mono);font-size:12px">${c[0]}</td>
+      <td style="text-align:left;color:var(--faint);font-size:12.5px">${c[1]}</td>
+      <td class="num">${c[2]?'相同':'不同'}</td>
+      <td><span class="chk ${correct?'y':'n'}">${correct?'✓':'✗'}</span>
+      <span style="font-size:11px;color:var(--faint)">${same[i]?'判为相同':'判为不同'}</span></td></tr>`;
+  }).join('');
+  const pct=100*ok/CASES.length;
+  $('invScore').innerHTML=`<div class="lbl">正确数 ${ok} / ${CASES.length}</div>
+    <div class="bar"><i class="${ok===6?'ok':(ok>=4?'':'warn')}" style="width:${pct}%"></i></div>
+    <p style="font-size:13px;color:var(--dim);margin-top:12px">${SCHEME_NOTE[s]}</p>`;
+}
+$('scheme').onchange=renderInv;
+
+/* ========== TAB 3: reward annealing ========== */
+function renderAnneal(){
+  const t=+$('prog').value; $('progv').textContent=t+'%';
+  const lam=(1-t/100)*1.0, eta=(1-t/100)*0.3;
+  $('barSA').style.width=(100*lam/1.0)+'%';
+  $('barNOV').style.width=(100*eta/1.0)+'%';
+  const phase = t<25?'早期 · 重表示学习与探索' : (t<75?'中期 · 逐步转向利用':'后期 · 纯粹追求预测力');
+  $('annealKpi').innerHTML=`
+    <div><div class="k">λ(T) · SA 权重</div><div class="v">${lam.toFixed(3)}</div><div class="d">λ_max = 1.0</div></div>
+    <div><div class="k">η(T) · NOV 权重</div><div class="v">${eta.toFixed(3)}</div><div class="d">η_max = 0.3</div></div>
+    <div><div class="k">R_IC 权重</div><div class="v">1.000</div><div class="d">恒定</div></div>
+    <div><div class="k">阶段</div><div class="v" style="font-size:14px;line-height:1.5">${phase}</div><div class="d">&nbsp;</div></div>`;
+}
+$('prog').oninput=renderAnneal;
+
+/* ========== TAB 4: results ========== */
+/* 论文表 1，顺序: [IC, ICIR, RIC, RICIR, AR%, MDD%, SR] */
+const R={
+ CSI300:[
+  ['MLP',[.020,.158,.019,.142,3.54,-20.9,0.68]],['LightGBM',[.011,.124,.006,.064,2.61,-18.5,0.53]],
+  ['XGBoost',[.031,.243,.033,.248,5.40,-17.5,1.26]],['GP',[.026,.215,.028,.216,6.80,-17.6,1.55]],
+  ['AlphaGen',[.058,.414,.057,.360,4.00,-22.6,0.76]],['AlphaQCM',[.043,.262,.042,.246,1.95,-24.8,0.36]],
+  ['AlphaForge',[.041,.259,.052,.306,3.90,-21.9,0.88]],['AlphaAgent',[.051,.325,.056,.329,2.16,-26.9,0.65]],
+  ['AlphaSAGE',[.079,.496,.094,.583,7.62,-17.3,1.71]]],
+ CSI500:[
+  ['MLP',[.017,.185,.020,.233,1.56,-24.3,0.27]],['LightGBM',[.024,.305,.021,.264,4.61,-17.5,0.89]],
+  ['XGBoost',[.039,.365,.052,.528,5.50,-17.1,1.15]],['GP',[.014,.238,.022,.233,3.04,-19.4,0.56]],
+  ['AlphaGen',[.032,.270,.031,.230,1.15,-32.4,0.19]],['AlphaQCM',[.048,.378,.073,.546,4.06,-24.0,0.75]],
+  ['AlphaForge',[.053,.345,.083,.600,4.18,-16.7,0.93]],['AlphaAgent',[.053,.396,.065,.495,1.82,-22.4,0.36]],
+  ['AlphaSAGE',[.054,.379,.084,.637,5.53,-16.0,1.20]]],
+ CSI1000:[
+  ['MLP',[.048,.384,.069,.621,3.22,-25.7,0.47]],['LightGBM',[.067,.501,.083,.656,4.98,-22.7,0.98]],
+  ['XGBoost',[.062,.498,.086,.695,4.72,-23.5,0.91]],['GP',[.058,.474,.079,.657,4.32,-24.7,0.67]],
+  ['AlphaGen',[.071,.540,.092,.713,5.27,-24.0,0.92]],['AlphaQCM',[.065,.453,.107,.682,7.12,-20.6,1.31]],
+  ['AlphaForge',[.071,.537,.095,.742,6.07,-21.1,1.06]],['AlphaAgent',[.072,.579,.089,.712,5.51,-20.5,1.01]],
+  ['AlphaSAGE',[.076,.582,.096,.736,7.62,-20.3,1.33]]],
+ SP500:[
+  ['MLP',[.035,.287,.020,.143,12.85,-5.6,3.35]],['LightGBM',[.023,.196,.018,.165,11.11,-5.1,4.22]],
+  ['XGBoost',[.016,.159,.026,.168,13.25,-8.3,3.61]],['GP',[.032,.308,.002,.016,13.39,-13.0,3.15]],
+  ['AlphaGen',[.044,.396,.013,.127,10.31,-5.5,3.96]],['AlphaQCM',[.038,.262,.010,.071,13.86,-13.0,3.30]],
+  ['AlphaForge',[.039,.422,.031,.324,17.24,-5.0,6.30]],['AlphaAgent',[.048,.479,.033,.315,18.66,-5.7,6.27]],
+  ['AlphaSAGE',[.052,.493,.038,.382,19.47,-4.2,6.32]]],
+};
+const DSK=['CSI300','CSI500','CSI1000','SP500'];
+const MN=['IC','ICIR','RIC','RICIR','AR 年化收益','MDD 最大回撤','SR 夏普'];
+function renderRes(){
+  const ds=DSK[+$('rds').value], mi=+$('rmet').value;
+  $('mh').textContent=MN[mi];
+  const rows=R[ds];
+  const isMDD=(mi===5);
+  const vals=rows.map(r=>r[1][mi]);
+  // MDD 是负数，越接近 0 越好
+  const best=isMDD?Math.max(...vals):Math.max(...vals);
+  const span=Math.max(...vals.map(Math.abs));
+  $('resTab').innerHTML=rows.map(r=>{
+    const v=r[1][mi], isBest=(v===best), sage=(r[0]==='AlphaSAGE');
+    const w=100*Math.abs(v)/span;
+    const dec=(mi>=4)?2:3;
+    const unit=(mi===4||mi===5)?'%':'';
+    return `<tr class="${sage?'best':''}">
+      <td>${r[0]}${isBest&&!sage?'<span class="tag warn">最优</span>':''}</td>
+      <td><div class="bar"><i class="${isMDD?'warn':''}" style="width:${w}%"></i></div></td>
+      <td class="num">${v.toFixed(dec)}${unit}</td></tr>`;
+  }).join('');
+  // 例外提示
+  let note='';
+  if(ds==='CSI500'&&mi===1) note='AlphaAgent 的 ICIR（0.396）<b>高于</b> AlphaSAGE（0.379）—— 这是论文「所有相关性指标第一」说法的反例之一。';
+  if(ds==='CSI1000'&&mi===3) note='AlphaForge 的 RICIR（0.742）<b>高于</b> AlphaSAGE（0.736）—— 这是另一个反例。';
+  if(ds==='CSI500'&&mi===0) note='IC 只赢 0.001（0.054 vs AlphaForge 0.053）—— 单因子质量几乎打平，真正的差距在组合指标（SR 1.20 vs 0.93）。';
+  $('resNote').innerHTML = note?`<div class="warnbox" style="margin-top:16px">${note}</div>`:'';
+}
+$('rds').onchange=renderRes; $('rmet').onchange=renderRes;
+
+/* 论文表 2 消融 */
+const AB=[
+ ['基线 GFlowNet',[0,0,0,0,0],.048,.437,3.63,-22.9,0.72],
+ ['+ ES',[1,0,0,0,0],.046,.397,-0.47,-24.8,-0.11],
+ ['+ ES + GNN',[1,1,0,0,0],.070,.554,5.58,-19.4,1.25],
+ ['+ SA',[1,1,1,0,0],.071,.566,4.68,-17.6,1.14],
+ ['+ NOV',[1,1,1,1,0],.075,.614,6.77,-17.8,1.53],
+ ['+ ENT（完整）',[1,1,1,1,1],.079,.583,7.62,-17.3,1.71],
+];
+$('abTab').innerHTML=AB.map((r,i)=>{
+  const full=(i===AB.length-1), bad=(i===1), jump=(i===2);
+  const cls=bad?'warn':(full?'ok':(jump?'alt':''));
+  return `<tr class="${full?'best':''}">
+    <td>${r[0]}${bad?'<span class="tag warn">失效</span>':''}${jump?'<span class="tag">最大提升</span>':''}</td>
+    <td><div class="bar"><i class="${cls}" style="width:${100*r[2]/0.079}%"></i></div></td>
+    <td class="num">${r[2].toFixed(3)}</td>
+    <td class="num" style="color:${i===5?'var(--bad)':'var(--ink)'}">${r[3].toFixed(3)}</td>
+    <td class="num" style="color:${r[4]<0?'var(--bad)':'var(--ink)'}">${r[4].toFixed(2)}%</td>
+    <td class="num">${r[5].toFixed(1)}%</td>
+    <td class="num" style="color:${r[6]<0?'var(--bad)':'var(--ink)'}">${r[6].toFixed(2)}</td></tr>`;
+}).join('');
+
+renderCollapse(); renderInv(); renderAnneal(); renderRes();
+</script>
+</body>
+</html>

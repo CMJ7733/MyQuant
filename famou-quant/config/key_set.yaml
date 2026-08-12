@@ -1,0 +1,15 @@
+qianfan:
+  api_base: "https://qianfan.baidubce.com/v2"
+  api_key: "xxx"
+  model_names: ["deepseek-v3", "deepseek-r1-250528"]
+  appid: "xxxx"
+oversea:
+  api_base: "http://211.23.3.237:27544/v1"
+  api_key: "xxxx"
+  model_names: ["gemini-2.5-pro-preview-05-06"]
+  appid: "xxxx"
+embedding:
+  api_base: "https://qianfan.baidubce.com/v2/embeddings"
+  api_key: "xxxx"
+  model_names: ["qwen3-embedding-4b", "embedding-v1"]
+  appid: "xxxx"

@@ -1,0 +1,19 @@
+```{{ language }}
+{{ program_code }}
+```
+{% if combined_score is defined %}
+- Combined Score
+{{ combined_score | format_score }}
+{% endif %}
+{% if error_info is defined and error_info%}
+- Error Info
+{{ error_info }}
+{% endif %}
+{% if metrics is defined and metrics%}
+- Evaluation Metrics
+{{ metrics | format_metrics}}
+{% endif %}
+{% if llm_feedback is defined and llm_feedback%}
+- Feedback
+{{ llm_feedback | format_metrics}}
+{% endif %}

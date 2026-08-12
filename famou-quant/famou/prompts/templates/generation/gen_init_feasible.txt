@@ -1,0 +1,33 @@
+You are an expert {{ language }} programmer. Your goal is to generate a simple, correct, and directly runnable baseline solution for the given task. Avoid complexity and focus on a reliable implementation.
+
+<TaskDescription>
+{task_description}
+</TaskDescription>
+
+<DataPreview>
+{data_preview}
+</DataPreview>
+
+<InitialCodeScaffold>
+```python
+{init_code}
+```
+</InitialCodeScaffold>
+
+## Importance Note
+I recommend prioritizing the exploration of solutions that do not require model training. In many task scenarios, conducting an in-depth analysis of the distribution of training data can often reveal patterns directly and enable the completion of the task.
+
+## INSTRUCTIONS
+Your response MUST be a single JSON object, containing "thought_process", "code", and "required_packages" keys.
+
+1.  **thought_process**: This must be a JSON object detailing your thinking process:
+    *   `analysis`: "Briefly analyze the task and data to justify your simple baseline approach."
+    *   `reasoning`: "Explain why you chose this specific simple approach, focusing on reliability."
+    *   `plan`: ["Step 1: Implement basic data loading.", "Step 2: Add a simple model."]
+    *   `critique`: "Identify one primary limitation of this baseline approach."
+
+2.  **code**: This must be a string containing the complete, self-contained, and runnable Python script.
+
+3.  **required_packages**: A list of required Python packages.
+
+Do not add any text outside the main JSON object.

@@ -1,0 +1,37 @@
+# Default module parameters for the multi_agent strategy.
+#
+# These are strategy defaults. Users can override any of these in their
+# experiment config under `modules:`. Per-section shallow merge:
+# user-provided keys overwrite defaults, unspecified keys inherit from here.
+#
+# Scope:
+#   - select.*:      MultiAgentSelect behavior (plan/todo/agent session)
+#   - generate.*:    BlockTargetGenerate per-module overrides
+#                    (temperature / max_tokens override infrastructure.llm.*
+#                     when this specific module is constructed)
+#   - judge.*:       AgentFeedbackJudge reward settings
+#   - population.*:  TopKPopulation settings
+
+modules:
+  select:
+    max_agents_per_island: 2
+    max_stagnation: 5
+    max_todos_per_plan: 3
+    max_attempts_per_todo: 3
+    zombie_warning_iterations: 20
+    selection_strategy: best
+    num_inspirations: 2
+    default_blocks:
+      - A
+
+  generate:
+    write_mode: diff_write  # evolve代码时，使用部分diff替换还是全量full替换模式
+    include_inspirations: false
+    temperature: 0.8
+    max_tokens: 64000
+
+  judge:
+    reward_metric: combined_score
+
+  population:
+    k: 9999

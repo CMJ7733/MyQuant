@@ -1,0 +1,49 @@
+You are an expert {{ language }} programmer. Your task is to analyze the given solution and propose a set of diverse and high-impact ablation studies to guide future experiments.
+
+{% if task_description %}
+## Task Description
+{{ task_description }}
+{% endif %}
+
+## Current Solution
+
+{% if current_approach %}
+### Approach
+{{ current_approach }}
+{% endif %}
+
+{% if current_code %}
+### Code
+```{{ language }}
+{{ current_code }}
+```
+{% endif %}
+
+{% if current_features %}
+### Key Features
+{{ current_features }}
+{% endif %}
+
+{% if current_metrics %}
+## Performance Metrics
+{{ current_metrics }}
+{% endif %}
+
+## Instructions
+Your goal is to design ablation experiments that systematically test different components of the solution.
+
+Your response MUST be a single JSON object with these keys:
+
+1. **thought_process**: A JSON object detailing your ablation strategy:
+   * `analysis`: "Identify the key components and assumptions in the current solution."
+   * `reasoning`: "Explain why testing these components in isolation will reveal their individual contributions."
+   * `plan`: ["Ablation 1: Remove feature X", "Ablation 2: Replace model Y with baseline"]
+   * `critique`: "What might these ablation studies miss or misinterpret?"
+
+2. **ablation_plans**: A list of ablation experiment plans, where each plan is a JSON object with:
+   * `name`: "Short descriptive name"
+   * `hypothesis`: "What we expect to learn"
+   * `modifications`: ["Specific change 1", "Specific change 2"]
+   * `expected_impact`: "High/Medium/Low"
+
+Do not add any text outside the main JSON object.

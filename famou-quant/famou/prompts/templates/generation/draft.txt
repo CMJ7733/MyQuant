@@ -1,0 +1,81 @@
+You are an expert {{ language }} programmer. Your goal is to propose a novel and effective solution to the problem, ensuring it is distinct from previously tried ideas.
+
+<TaskDescription>
+{{ task_description }}
+</TaskDescription>
+
+{% if data_preview %}
+<DataPreview>
+{{ data_preview }}
+</DataPreview>
+{% endif %}
+
+{% if init_code %}
+<InitialCodeScaffold>
+```python
+{{ init_code }}
+```
+</InitialCodeScaffold>
+{% endif %}
+
+{% if memory %}
+<PreviouslyExploredIdeas>
+{{ memory }}
+</PreviouslyExploredIdeas>
+{% endif %}
+
+{% if experience %}
+<VerifiedEffectiveExperience>
+{{ experience }}
+</VerifiedEffectiveExperience>
+{% endif %}
+
+{% if packages %}
+<Environment>
+{{ packages }}
+</Environment>
+{% endif %}
+
+{# 根据迭代次数调整策略 #}
+{% if current_iteration is defined %}
+  {% if current_iteration == 0 %}
+## INSTRUCTIONS (First Draft)
+
+This is the initial draft. Focus on:
+- Understanding the problem thoroughly
+- Implementing a complete, working solution
+- Ensuring correctness over optimization
+  {% elif current_iteration < 3 %}
+## INSTRUCTIONS (Early Exploration)
+
+Explore different approaches:
+- Try distinct algorithms or strategies
+- Experiment with different data representations
+- Prioritize diversity in your approach
+
+  {% else %}
+## INSTRUCTIONS (Refined Draft)
+
+Build upon previous explorations:
+- Address weaknesses in previous drafts
+- Combine successful elements from different approaches
+- Focus on novel variations that haven't been tried
+  {% endif %}
+{% else %}
+## INSTRUCTIONS
+Your goal is to provide EXACTLY ONE IDEA AND ONE CODE IMPLEMENTATION of the idea, different from those previously explored, that leverages the available resources and is likely to lead to strong performance on the competition.
+{% endif %}
+
+Your response MUST be a single JSON object, containing "thought_process", "code", and "required_packages" keys.
+
+1.  **thought_process**: A JSON object with your detailed thinking process:
+    *   `analysis`: "Analyze the task and data. Explain why a new approach is needed."
+    *   `reasoning`: "Explain why your proposed idea is novel and promising."
+    *   `plan`: ["Step 1: ...", "Step 2: ..."]
+    *   `critique`: "What is the primary risk or potential downside?"
+
+2.  **code**: A string containing the complete, self-contained, and runnable Python script.
+
+3.  **required_packages**: A list of required Python packages.
+
+Do not add any text outside the main JSON object.

@@ -1,0 +1,118 @@
+You are an expert {{ language }} programmer specializing in machine learning competition integrity and data leakage detection. Your task is to analyze the current program for potential data leakage issues.
+
+<TaskDescription>
+{{ task_description }}
+</TaskDescription>
+
+{% if data_preview %}
+<DataPreview>
+{{ data_preview }}
+</DataPreview>
+{% endif %}
+
+<CurrentProgram>
+{{ parent_program }}
+</CurrentProgram>
+
+{% if memory %}
+<PreviousLeakageChecks>
+{{ memory }}
+</PreviousLeakageChecks>
+{% endif %}
+
+{% if experience %}
+<EffectiveLeakageFixes>
+{{ experience }}
+</EffectiveLeakageFixes>
+{% endif %}
+
+{% if packages %}
+<Environment>
+{{ packages }}
+</Environment>
+{% endif %}
+
+## Common Data Leakage Patterns
+
+### Time Series Leakage
+- **Future information**: Using test period data to predict past values
+- **Look-ahead bias**: Calculating statistics using future data points
+- **Target leakage**: Including future target values as features
+- **Example**: Using test.csv's closing price to predict training period's trend
+
+### Train-Test Contamination
+- **Preprocessing before split**: Scaling/encoding using combined train+test statistics
+- **Imputation before split**: Filling missing values using test data information
+- **Feature engineering before split**: Creating features using test set information
+
+### Target Leakage
+- **Direct inclusion**: Using target variable or derived values as features
+- **Reverse causality**: Features that are consequences of the target
+- **Data leakage through IDs**: Row IDs or timestamps that encode target information
+
+### Cross-Validation Leakage
+- **Improper grouping**: Group-aware CV not used when data has groups
+- **Time-based split**: Random CV instead of time-based CV on time series
+- **Data augmentation**: Augmentation done before CV split
+
+### File-Based Leakage
+- **Test set files**: Reading test.csv, submission.csv in training code
+- **External data**: Using competition's test labels through external sources
+- **Sample submission**: Using sample_submission.csv patterns to infer targets
+
+## Instructions
+
+Analyze the current program for data leakage:
+
+1. **Identify potential leakage sources**:
+   - Check for file operations (open, pd.read_csv) that might access test data
+   - Look for preprocessing before train-test split
+   - Examine feature engineering for look-ahead bias
+   - Review CV strategy for time-series appropriateness
+
+2. **If leakage is found** (`has_leakage: true`), provide corrected code that:
+   - Eliminates all identified leakage sources
+   - Implements proper train-test separation
+   - Uses appropriate CV strategy for the data type
+   - Maintains model performance without cheating
+
+## Output Format
+
+**If no leakage is found** (`has_leakage: false`), output only the analysis — do NOT include `corrected_code` or `required_packages`:
+
+```json
+{
+    "leakage_analysis": {
+        "has_leakage": false,
+        "issues_found": []
+    }
+}
+```
+
+**If leakage is found** (`has_leakage: true`), output the full result including corrected code:
+
+```json
+{
+    "leakage_analysis": {
+        "has_leakage": true,
+        "issues_found": [
+            {
+                "type": "train_test_contamination|target_leakage|future_info|cv_leakage|file_leakage",
+                "location": "specific code location or description",
+                "description": "what the leakage is",
+                "impact": "why this is problematic"
+            }
+        ]
+    },
+    "corrected_code": "string containing the complete corrected program",
+    "required_packages": ["list", "of", "packages"]
+}
+```
+
+## Key Principles
+
+- **First rule of ML competitions**: Never use test data in training
+- **Preprocessing rule**: Fit scalers/imputers on training data only, transform validation/test
+- **Time series rule**: Use time-based CV, not random CV
+- **Feature engineering rule**: Create features using only historical data available at prediction time
+- **File access rule**: Only read training data files during development
