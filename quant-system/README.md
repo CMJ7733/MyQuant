@@ -7,8 +7,8 @@ apparatus needed to tell whether it is working.
 
 Alphas are **Python functions**, not formula strings. Twenty-one task-specific
 agents propose them, a multi-agent quality checker filters them, five metrics score
-them, and LLM-driven mutation and crossover evolve the survivors. The paper's
-reading material lives in `/root/quant/cogalpha/`.
+them, and LLM-driven mutation and crossover evolve the survivors. This implementation
+is organized in the repository's `cogalpha/` package.
 
 ```
 Raw OHLCV → 7-Level Hierarchy → Quality Checker → 5-Metric Evaluation
@@ -22,32 +22,30 @@ Activate the `quant` environment and work from the package directory:
 
 ```bash
 conda activate quant
-cd /root/quant/F4Q/quant-system
-export PYTHONPATH=$PWD
+cd /path/to/quant/F4Q/quant-system
+python -m pip install -e '.[monitor,dev]'
 ```
 
-Every example below assumes those three lines. The environment already has everything:
-pandas 2.3, numpy 2.5, scipy 1.18, scikit-learn 1.9, lightgbm 4.7, qlib 0.9.8, TA-Lib,
-openai, fastapi, uvicorn.
+Every example below assumes those three lines. This install provides the declared core
+dependencies (NumPy, pandas, SciPy, and PyYAML), the monitor dependencies (FastAPI and
+Uvicorn), and the test dependencies (pytest and httpx). Install the `llm`, `model`,
+`qlib`, or `ta` extras separately when the corresponding command needs them; they are
+not part of the monitor setup above.
 
-The `conda activate` matters. This machine has four environments and only `quant` has
-qlib and lightgbm; the default `python` is base and fails with
-`ModuleNotFoundError: qlib`. If `conda activate` is unavailable in a non-interactive
-shell, call the interpreter directly instead:
-`/opt/conda/envs/quant/bin/python -m cogalpha.cli ...`
+If `conda activate` is unavailable in a non-interactive shell, use
+`conda run -n quant python -m cogalpha.cli ...` instead. On the current macOS setup,
+that command resolves to `/opt/homebrew/Caskroom/miniforge/base/envs/quant/bin/python`.
 
-Installing the package drops the `python -m cogalpha.cli` prefix and the `PYTHONPATH`
-line, since `pyproject.toml` declares the entry point:
+The editable install also provides the shorter `cogalpha` entry point:
 
 ```bash
-python -m pip install -e .
 cogalpha inspect hierarchy          # equivalent to python -m cogalpha.cli inspect hierarchy
 ```
 
-The examples keep the explicit form so they work without installing anything.
+The examples keep the explicit module form so they do not depend on the console entry
+point.
 
-If PyPI is needed at all, it must go through a mirror — the default index and
-`pip.baidu-int.com` are both unreachable here:
+To install through the Tsinghua PyPI mirror explicitly:
 
 ```bash
 python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple <package>
@@ -125,10 +123,10 @@ Six commands:
 | `report` | Derive diagnostics from an archive — offline, no model calls |
 | `inspect` | Print the hierarchy, guidance modes, resolved config, or data checks |
 
-Every command takes `--config YAML` and `--set SECTION.KEY=VALUE` (repeatable, parsed
-as YAML so types survive the shell). Commands that call a model also take
-`--llm-config`, `--llm-provider`, `--llm-model`, `--llm-api-base` and
-`--max-llm-calls`.
+`search`, `evaluate`, `compose`, and `inspect` take `--config YAML` and repeatable
+`--set SECTION.KEY=VALUE` overrides (parsed as YAML so types survive the shell).
+`search` also takes `--llm-config`, `--llm-provider`, `--llm-model`,
+`--llm-api-base`, and `--max-llm-calls`.
 
 ### search
 
@@ -160,9 +158,16 @@ checks said first.
 
 ```bash
 python -m cogalpha.cli monitor --run runs/                    # newest run in runs/
-python -m cogalpha.cli monitor --run runs/20260810-101530-csi300
+python -m cogalpha.cli monitor --run runs/20260810-123307-csi300
 python -m cogalpha.cli monitor --run runs/ --port 9000 --interval 0.5 --open
 ```
+
+The monitor is a Material 3-style Chinese dashboard. All 21 agents in the
+seven-level hierarchy remain clickable, including agents that were not selected for
+the current run. Each agent opens a right-side detail panel with overview, recent
+activity, and generation history; generation, Alpha, and LLM-call rows can be opened
+again for their archived details. Live runs update through SSE, with automatic
+polling fallback when a tunnel or proxy cannot carry the event stream.
 
 Reads the archive only, so it is safe against a running search and replays a finished
 one identically. From a laptop, tunnel rather than exposing it:
@@ -280,8 +285,8 @@ anything.
 
 ## What the dashboard shows
 
-The 21-agent matrix by hierarchy level (running / done / queued, plus the eight agents
-the golden-ratio selection did not pick this run), the quality checker funnel for the
+The 21-agent matrix by hierarchy level (running / done / queued, plus agents that did
+not participate in the current run), the quality checker funnel for the
 current generation stage by stage, the elite-score trajectory with agent boundaries
 marked, LLM cost broken down by role, and how close the running agent is to the §B.4
 plateau stop. Clicking drills all the way down: agent → generation → alpha (code, all

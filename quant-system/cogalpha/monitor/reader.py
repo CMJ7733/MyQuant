@@ -22,14 +22,24 @@ be gigabytes for information nobody is looking at.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Optional, Tuple
+from typing import Any, BinaryIO, Deque, Dict, List, Optional, Tuple
 
 #: Rolling window of recent calls kept for the activity feed.
 _RECENT_CALLS = 60
+
+#: Rolling window of recent calls kept for each agent detail view.
+_AGENT_RECENT_CALLS = 200
+
+#: Bytes immediately before a tail offset used to distinguish append from rewrite.
+_TAIL_CHECKPOINT_BYTES = 4096
+
+#: Prevent a continuously replaced archive from keeping one request in a retry loop.
+_TAIL_READ_ATTEMPTS = 3
 
 #: Checker stages in pipeline order. The funnel is drawn in this order, and a stage
 #: absent from a run's rejection counts simply contributes no drop.
@@ -80,6 +90,8 @@ class AgentState:
     seconds: float = 0.0
     stopped_early: Optional[str] = None
     elite_trajectory: List[Optional[float]] = field(default_factory=list)
+    current_generation: Optional[int] = None
+    current_cycle: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -179,37 +191,88 @@ class RunState:
         }
 
 
+@dataclass(frozen=True)
+class _TailBatch:
+    """One tail read, including whether its file epoch changed."""
+
+    records: Tuple[Dict[str, Any], ...] = ()
+    epoch_changed: bool = False
+
+
 class _Tail:
     """Byte-offset tail over one append-only JSONL file."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self.offset = 0
-        self._partial = ""
+        self._partial = b""
+        self._identity: Optional[Tuple[int, int]] = None
+        self._mtime_ns: Optional[int] = None
+        self._checkpoint: Optional[bytes] = None
 
-    def poll(self) -> List[Dict[str, Any]]:
-        """Return records appended since the last call."""
-        if not self.path.exists():
-            return []
-        size = self.path.stat().st_size
-        if size < self.offset:
-            # File shrank: a different run is writing here now. Start over rather
-            # than reading from a stale offset into the middle of a record.
-            self.offset = 0
-            self._partial = ""
-        if size == self.offset:
-            return []
+    @staticmethod
+    def _read_checkpoint(fh: BinaryIO, offset: int) -> bytes:
+        position = fh.tell()
+        start = max(0, offset - _TAIL_CHECKPOINT_BYTES)
+        fh.seek(start)
+        checkpoint = fh.read(offset - start)
+        fh.seek(position)
+        return checkpoint
 
-        with open(self.path, "r", encoding="utf-8", errors="replace") as fh:
+    def rewind(self) -> None:
+        """Forget the prior file epoch and read the current file from byte zero."""
+        self.offset = 0
+        self._partial = b""
+        self._identity = None
+        self._mtime_ns = None
+        self._checkpoint = None
+
+    def poll(self) -> _TailBatch:
+        """Read appended records and report replacement of the exact opened file."""
+        try:
+            fh = open(self.path, "rb")
+        except OSError:
+            return _TailBatch(epoch_changed=self._identity is not None)
+
+        with fh:
+            opened = os.fstat(fh.fileno())
+            identity = (opened.st_dev, opened.st_ino)
+            if self._identity is not None:
+                changed = identity != self._identity or opened.st_size < self.offset
+                if not changed and self._checkpoint is not None:
+                    changed = self._read_checkpoint(fh, self.offset) != self._checkpoint
+                if not changed and opened.st_size == self.offset:
+                    changed = opened.st_mtime_ns != self._mtime_ns
+                if changed:
+                    return _TailBatch(epoch_changed=True)
+
             fh.seek(self.offset)
             chunk = fh.read()
-            self.offset = fh.tell()
+            next_offset = fh.tell()
+            after_read = os.fstat(fh.fileno())
+            checkpoint = self._read_checkpoint(fh, next_offset)
+
+        try:
+            current = self.path.stat()
+        except OSError:
+            return _TailBatch(epoch_changed=True)
+        if (current.st_dev, current.st_ino) != identity or current.st_size < next_offset:
+            return _TailBatch(epoch_changed=True)
+        if (
+            current.st_size == after_read.st_size
+            and current.st_mtime_ns != after_read.st_mtime_ns
+        ):
+            return _TailBatch(epoch_changed=True)
+
+        expected_checkpoint = ((self._checkpoint or b"") + chunk)[-_TAIL_CHECKPOINT_BYTES:]
+        if checkpoint != expected_checkpoint:
+            return _TailBatch(epoch_changed=True)
 
         text = self._partial + chunk
-        lines = text.split("\n")
+        lines = text.split(b"\n")
         # The last element is either "" (chunk ended on a newline) or a partial
         # record the writer has not finished. Either way it is carried forward.
-        self._partial = lines.pop()
+        partial = lines.pop()
 
         out: List[Dict[str, Any]] = []
         for line in lines:
@@ -218,11 +281,17 @@ class _Tail:
                 continue
             try:
                 out.append(json.loads(line))
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 # A record we will never be able to parse; skipping it is better
                 # than stalling the whole feed on one corrupt line.
                 continue
-        return out
+
+        self.offset = next_offset
+        self._partial = partial
+        self._identity = identity
+        self._mtime_ns = after_read.st_mtime_ns
+        self._checkpoint = checkpoint
+        return _TailBatch(records=tuple(out))
 
 
 class RunReader:
@@ -251,7 +320,12 @@ class RunReader:
         self._gen_tail = _Tail(self.path / "generations.jsonl")
         self._call_tail = _Tail(self.path / "llm_calls.jsonl")
 
-        # --- accumulated state ------------------------------------------------
+        self._reset_accumulated_state()
+
+    # ------------------------------------------------------------------ helpers
+
+    def _reset_accumulated_state(self) -> None:
+        """Clear every value derived from the two stream files."""
         self._agents: Dict[str, AgentState] = {}
         self._agent_order: List[str] = []
         self._generations: List[Dict[str, Any]] = []
@@ -259,6 +333,10 @@ class RunReader:
         self._role_tokens: Counter = Counter()
         self._role_latency: Counter = Counter()
         self._recent: Deque[Dict[str, Any]] = deque(maxlen=_RECENT_CALLS)
+        self._agent_recent: Dict[str, Deque[Dict[str, Any]]] = {}
+        self._agent_call_counts: Counter = Counter()
+        self._agent_token_counts: Counter = Counter()
+        self._agent_latency_totals: Counter = Counter()
         self._n_calls = 0
         self._n_tokens = 0
         self._last_event_at: Optional[float] = None
@@ -270,8 +348,6 @@ class RunReader:
         self._config_cache: Optional[Dict[str, Any]] = None
 
         self._init_agents()
-
-    # ------------------------------------------------------------------ helpers
 
     @staticmethod
     def _resolve(root: Path) -> Path:
@@ -345,9 +421,23 @@ class RunReader:
 
     def poll(self) -> RunState:
         """Consume any new records and return the current snapshot."""
-        for record in self._gen_tail.poll():
+        for _ in range(_TAIL_READ_ATTEMPTS):
+            generations = self._gen_tail.poll()
+            calls = self._call_tail.poll()
+            if not (generations.epoch_changed or calls.epoch_changed):
+                break
+
+            # One changed stream invalidates both batches. Rebuild the pair from
+            # byte zero before applying either, so two run epochs cannot mix.
+            self._gen_tail.rewind()
+            self._call_tail.rewind()
+            self._reset_accumulated_state()
+        else:
+            return self._snapshot()
+
+        for record in generations.records:
             self._apply_generation(record)
-        for record in self._call_tail.poll():
+        for record in calls.records:
             self._apply_call(record)
         return self._snapshot()
 
@@ -363,13 +453,17 @@ class RunReader:
             self._agents[name] = agent
             self._agent_order.append(name)
 
-        # The first record for an agent means the previous one finished. Agents are
-        # sequential, so this transition is unambiguous.
-        for other in self._agents.values():
-            if other.status == "running" and other.name != name:
-                other.status = "done"
-        agent.status = "running"
+        # The first record for an agent normally means the previous one finished.
+        # A record for an already-completed agent can arrive late from the other
+        # tailed stream, so aggregate it without reversing a newer transition.
+        if agent.status != "done":
+            for other in self._agents.values():
+                if other.status == "running" and other.name != name:
+                    other.status = "done"
+            agent.status = "running"
         agent.selected = True
+        agent.current_generation = record.get("generation")
+        agent.current_cycle = record.get("cycle")
 
         agent.generations += 1
         agent.n_generated += int(record.get("n_generated", 0) or 0)
@@ -394,13 +488,16 @@ class RunReader:
 
     def _apply_call(self, record: Dict[str, Any]) -> None:
         """Fold one LLM call into the accounting. Prompt/response text is dropped."""
+        from cogalpha.agents.hierarchy import BY_NAME
+
         tags = record.get("tags") or {}
         role = str(tags.get("role", "?"))
         tokens = int((record.get("usage") or {}).get("total_tokens", 0) or 0)
+        latency = int(record.get("latency_ms", 0) or 0)
 
         self._role_counts[role] += 1
         self._role_tokens[role] += tokens
-        self._role_latency[role] += int(record.get("latency_ms", 0) or 0)
+        self._role_latency[role] += latency
         self._n_calls += 1
         self._n_tokens += tokens
 
@@ -408,21 +505,52 @@ class RunReader:
         if isinstance(seq, int):
             self._call_index[seq] = seq
 
-        # The activity feed: enough to see what is happening, without the text.
-        self._recent.append(
-            {
-                "seq": seq,
-                "role": role,
-                "agent": tags.get("agent"),
-                "generation": tags.get("generation"),
-                "cycle": tags.get("cycle"),
-                "mode": tags.get("mode"),
-                "temperature": record.get("temperature"),
-                "tokens": tokens,
-                "latency_ms": record.get("latency_ms"),
-                "chars": len(record.get("response") or ""),
-            }
-        )
+        # The activity feeds: enough to see what is happening, without the text.
+        agent_name = tags.get("agent")
+        digest = {
+            "seq": seq,
+            "role": role,
+            "agent": agent_name,
+            "generation": tags.get("generation"),
+            "cycle": tags.get("cycle"),
+            "mode": tags.get("mode"),
+            "temperature": record.get("temperature"),
+            "model": record.get("model"),
+            "tokens": tokens,
+            "latency_ms": record.get("latency_ms"),
+            "chars": len(record.get("response") or ""),
+        }
+        self._recent.append(digest)
+        if isinstance(agent_name, str) and agent_name in BY_NAME:
+            agent = self._agents[agent_name]
+            if agent.status != "done":
+                for other in self._agents.values():
+                    if other.status == "running" and other.name != agent_name:
+                        other.status = "done"
+                agent.status = "running"
+                agent.selected = True
+                call_generation = tags.get("generation")
+                advances_generation = (
+                    agent.current_generation is None
+                    or (
+                        isinstance(call_generation, int)
+                        and isinstance(agent.current_generation, int)
+                        and call_generation > agent.current_generation
+                    )
+                )
+                if "generation" in tags and advances_generation:
+                    agent.current_generation = call_generation
+                    if "cycle" in tags:
+                        agent.current_cycle = tags.get("cycle")
+                elif agent.current_generation is None and "cycle" in tags:
+                    agent.current_cycle = tags.get("cycle")
+            recent = self._agent_recent.setdefault(
+                agent_name, deque(maxlen=_AGENT_RECENT_CALLS)
+            )
+            recent.append(digest)
+            self._agent_call_counts[agent_name] += 1
+            self._agent_token_counts[agent_name] += tokens
+            self._agent_latency_totals[agent_name] += latency
 
         # One trajectory point per 25 calls keeps the chart readable over a 100k-call
         # run without downsampling logic in the browser.
@@ -477,6 +605,7 @@ class RunReader:
 
         done = sum(1 for a in self._agents.values() if a.status == "done")
         running = next((a.name for a in self._agents.values() if a.status == "running"), None)
+        active = self._agents.get(running) if running is not None else None
 
         return RunState(
             run_dir=str(self.path),
@@ -492,10 +621,21 @@ class RunReader:
             config=_config_digest(cfg),
             panel=panel,
             summary=summary,
-            agents=[self._agents[n].to_dict() for n in self._ordered_agent_names()],
+            agents=[
+                {
+                    **self._agents[name].to_dict(),
+                    "llm_calls": max(
+                        self._agents[name].llm_calls,
+                        self._agent_call_counts[name],
+                    ),
+                }
+                for name in self._ordered_agent_names()
+            ],
             current_agent=running,
-            current_generation=latest.get("generation"),
-            current_cycle=latest.get("cycle"),
+            current_generation=(
+                active.current_generation if active is not None else latest.get("generation")
+            ),
+            current_cycle=active.current_cycle if active is not None else latest.get("cycle"),
             agents_done=done,
             agents_total=max(agents_total, done + (1 if running else 0)),
             generations_seen=len(self._generations),
@@ -507,7 +647,7 @@ class RunReader:
             else {},
             totals=self._totals(summary),
             calls_by_role=self._calls_by_role(),
-            recent_calls=list(reversed(self._recent)),
+            recent_calls=[dict(item) for item in reversed(self._recent)],
             elite_trajectory=self._elite_trajectory(),
             token_trajectory=self._token_traj[-400:],
             tier_counts=dict(summary.get("tiers") or {}) or self._tier_estimate(),
@@ -726,6 +866,62 @@ class RunReader:
 
     # ------------------------------------------------------------- detail lookup
 
+    def agent_detail(self, name: str) -> Optional[Dict[str, Any]]:
+        """Return static identity and live aggregates for one hierarchy agent."""
+        from cogalpha.agents.hierarchy import BY_NAME
+
+        spec = BY_NAME.get(name)
+        if spec is None:
+            return None
+
+        agent = self._agents[name]
+        records = [record for record in self._generations if record.get("agent") == name]
+        observed_calls = self._agent_call_counts[name]
+        calls = max(observed_calls, agent.llm_calls)
+        return {
+            "name": name,
+            "display_name": name.removeprefix("Agent"),
+            "level": spec.level,
+            "layer": spec.layer,
+            "focus": spec.focus,
+            "probe": spec.probe,
+            "selected": agent.selected,
+            "status": agent.status,
+            "current_generation": agent.current_generation,
+            "current_cycle": agent.current_cycle,
+            "summary": {
+                "generations": agent.generations,
+                "generated": agent.n_generated,
+                "passed": agent.n_passed,
+                "qualified": agent.n_qualified,
+                "elite": agent.n_elite,
+                "best_score": agent.best_score,
+                "best_rank_ic": agent.best_rank_ic,
+                "llm_calls": calls,
+                "llm_tokens": self._agent_token_counts[name],
+                "mean_latency_ms": round(
+                    self._agent_latency_totals[name] / observed_calls, 1
+                )
+                if observed_calls
+                else 0.0,
+                "seconds": round(agent.seconds, 1),
+                "stopped_early": agent.stopped_early,
+            },
+            "trajectory": [
+                {
+                    "generation": record.get("generation"),
+                    "cycle": record.get("cycle"),
+                    "score": _finite(record.get("elite_mean_score")),
+                    "elite": int(record.get("n_elite", 0) or 0),
+                }
+                for record in records
+            ],
+            "generations": [_agent_generation_digest(record) for record in records],
+            "recent_operations": [
+                dict(digest) for digest in reversed(self._agent_recent.get(name, ()))
+            ],
+        }
+
     def call_detail(self, seq: int) -> Optional[Dict[str, Any]]:
         """Fetch one call's full prompt and response by sequence number.
 
@@ -876,6 +1072,24 @@ def _generation_digest(record: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _agent_generation_digest(record: Dict[str, Any]) -> Dict[str, Any]:
+    """The compact generation record used in an agent detail view."""
+    return {
+        "generation": record.get("generation"),
+        "cycle": record.get("cycle"),
+        "generated": int(record.get("n_generated", 0) or 0),
+        "passed": int(record.get("n_passed_checker", 0) or 0),
+        "qualified": int(record.get("n_qualified", 0) or 0),
+        "elite": int(record.get("n_elite", 0) or 0),
+        "elite_mean_score": _finite(record.get("elite_mean_score")),
+        "best": dict(record.get("best") or {}),
+        "reject_counts": dict(record.get("reject_counts") or {}),
+        "op_counts": dict(record.get("op_counts") or {}),
+        "llm_calls": int(record.get("llm_calls", 0) or 0),
+        "wall_seconds": round(float(record.get("wall_seconds", 0.0) or 0.0), 1),
+    }
+
+
 def _config_digest(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """The config fields the dashboard displays.
 
@@ -905,6 +1119,3 @@ def _config_digest(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "llm_provider": llm.get("provider"),
         "llm_model": llm.get("model"),
     }
-
-
-

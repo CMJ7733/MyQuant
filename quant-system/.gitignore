@@ -25,3 +25,6 @@ dist/
 .ipynb_checkpoints/
 venv/
 .venv/
+
+# --- local design scratch --------------------------------------------------
+.superpowers/

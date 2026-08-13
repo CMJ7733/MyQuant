@@ -5,6 +5,7 @@ Endpoints
 ``GET /``                     the single-page dashboard
 ``GET /api/state``            full snapshot (JSON)
 ``GET /api/stream``           Server-Sent Events, one snapshot per tick
+``GET /api/agent/{name}``     one agent's identity, progress, and recent operations
 ``GET /api/call/{seq}``       one LLM call, full prompt and response
 ``GET /api/alpha/{id}``       one alpha: code, checks, fitness, lineage
 ``GET /api/generation/...``   the alphas one agent produced in one generation
@@ -26,6 +27,7 @@ explicit flag and prints a warning.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
@@ -42,9 +44,10 @@ def build_app(
 ):
     """Create the FastAPI application for one run directory.
 
-    A single :class:`RunReader` is shared by every request.  That is safe because the
-    reader only ever appends to its own state and FastAPI serves these handlers on one
-    event loop; it also means N open browser tabs cost one file tail, not N.
+    A single :class:`RunReader` is shared by every request, so N open browser tabs
+    cost one file tail, not N. FastAPI sync handlers and the sync SSE iterator may run
+    on worker threads; a lock serializes tail mutation with its associated snapshot or
+    detail read.
     """
     try:
         from fastapi import FastAPI, HTTPException
@@ -56,7 +59,12 @@ def build_app(
         ) from exc
 
     reader = RunReader(run_dir, stale_after=stale_after)
+    reader_lock = threading.RLock()
     app = FastAPI(title="CogAlpha monitor", docs_url=None, redoc_url=None)
+
+    def poll_payload() -> Dict[str, Any]:
+        with reader_lock:
+            return reader.poll().to_dict()
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> Any:
@@ -69,7 +77,7 @@ def build_app(
     @app.get("/api/state")
     def state() -> Any:
         """One snapshot. Used on page load and as the SSE fallback."""
-        return JSONResponse(reader.poll().to_dict())
+        return JSONResponse(poll_payload())
 
     @app.get("/api/stream")
     def stream() -> Any:
@@ -84,7 +92,7 @@ def build_app(
             # Tell the browser how long to wait before reconnecting after a drop.
             yield f"retry: {int(poll_interval * 2000)}\n\n"
             while True:
-                payload = json.dumps(reader.poll().to_dict(), default=str)
+                payload = json.dumps(poll_payload(), default=str)
                 yield f"data: {payload}\n\n"
                 time.sleep(poll_interval)
 
@@ -99,6 +107,16 @@ def build_app(
                 "Connection": "keep-alive",
             },
         )
+
+    @app.get("/api/agent/{name}")
+    def agent(name: str) -> Any:
+        """One agent's identity, progress, and recent operations."""
+        with reader_lock:
+            reader.poll()
+            record = reader.agent_detail(name)
+        if record is None:
+            raise HTTPException(404, f"agent {name} not found")
+        return JSONResponse(record)
 
     @app.get("/api/call/{seq}")
     def call(seq: int) -> Any:
