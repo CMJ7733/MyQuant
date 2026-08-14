@@ -552,7 +552,13 @@ class QualityChecker:
                 detail="; ".join(numeric.get("issues", [])) or "numerically stable",
                 payload={
                     k: numeric.get(k)
-                    for k in ("nan_ratio", "coverage", "mean_distinct_per_day", "n_days")
+                    for k in (
+                        "nan_ratio",
+                        "coverage",
+                        "mean_distinct_per_day",
+                        "mean_tie_ratio",
+                        "n_days",
+                    )
                 },
             )
         )

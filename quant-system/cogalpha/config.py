@@ -247,6 +247,24 @@ class QualityConfig:
     min_distinct_per_day: int = 5
     """"distinct values per day" check from A.3: guards constant/degenerate output."""
 
+    max_tie_ratio: float = 0.50
+    """Largest share of a day's cross-section allowed to sit on one value.
+
+    Not in the paper.  Added because the A.3 checks above cannot see the failure
+    it catches: ``max(trend, 0) * signal`` sends the whole inactive side of the
+    gate to exactly zero, and ``.fillna(0.0)`` adds the warm-up rows to the same
+    value.  Such a factor reports a 0% NaN ratio, full coverage and hundreds of
+    distinct values per day, so every existing gate passes it -- while half its
+    cross-section shares one rank and its RankIC is attenuated by an amount that
+    depends on the size of the tie group, which makes it incomparable with the
+    factors it is tiered against.
+
+    0.50 is deliberately at the edge of what a binary 0/1 gate produces: such a
+    gate is roughly half on, so it fails as soon as the inactive side is the
+    larger one.  Raise to 0.60-0.65 to keep hard gates in the search and catch
+    only the more extreme pile-ups.
+    """
+
     min_coverage: float = 0.60
     """Complement of the NaN limit, enforced per evaluated day."""
 

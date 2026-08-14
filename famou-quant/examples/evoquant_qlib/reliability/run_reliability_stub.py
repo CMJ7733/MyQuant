@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from famou.core.accessors import IslandAccessor, PopulationAccessor
-from famou.core.data import Context, Program
+from famou.core.data import Context, Program, RolloutResult
 from famou.core.state import StateStore
 from famou.reliability.archives import CertifiedArchive, SearchArchive
 from famou.reliability.budget import BudgetLedger
@@ -112,31 +112,59 @@ def main() -> None:
     )
 
     baseline = Program(id="init_0", code=baseline_code, generation=0, iteration=0)
-    pop = {"population": [baseline]}
-    ctx = Context(
-        experiment_id="exp_reliability_stub",
-        task_description="EvoQuant reliability stub run",
-        island_id=0,
-        accessor=PopulationAccessor(island_id=0, island_data=pop),
-        island_accessor=IslandAccessor(
-            island_id=0, visible_ids={"init_0"}, archive={"init_0": baseline}
-        ),
-        iteration=1,
-    )
+    # The Evolver rebuilds the Context each iteration from the live population,
+    # so this loop does the same. It matters: a promotion decision names an
+    # EXISTING candidate, and the strategy can only resolve that name through
+    # the context. With a context frozen at iteration 0, promotion silently
+    # never fires.
+    population = [baseline]
+    archive = {"init_0": baseline}
 
     for step in range(6):
-        rollout = strategy.forward(ctx, rollout_history=[])
+        ctx = Context(
+            experiment_id="exp_reliability_stub",
+            task_description="EvoQuant reliability stub run",
+            island_id=0,
+            accessor=PopulationAccessor(
+                island_id=0, island_data={"population": list(population)}
+            ),
+            island_accessor=IslandAccessor(
+                island_id=0, visible_ids=set(archive), archive=dict(archive)
+            ),
+            iteration=step + 1,
+        )
+
+        # forward_batch decides and generates; the evaluation happens in the
+        # rollout modules (that is what the Evolver runs concurrently), and the
+        # batch commits only once every member has reported back.
+        batch = strategy.forward_batch(ctx, [], max_batch_size=4)
+        results = []
+        for i, rollout in enumerate(batch.rollouts):
+            result = RolloutResult(rollout_id=f"stub_{step}_{i}", iteration=step + 1)
+            for module in rollout.modules:
+                result = module.execute(ctx, result)
+            results.append(result)
+        for result in results:
+            strategy.on_rollout_complete(result)
+            program = result.generated_program
+            if program.id not in archive:  # what _update_experiment does
+                archive[program.id] = program
+                population.append(program)
+
         transition = trajectory.transitions()[-1]
         action = transition.action
         gate_info = (
             f" gate={transition.gate_verdict.verdict.value}"
+            f"/{transition.gate_verdict.reason_code.value}"
             if transition.gate_verdict
             else ""
         )
+        target = action.promotion_target_id or "-"
         print(
             f"[step {step}] expert={action.expert.value} "
             f"family={action.model_family} fidelity={int(action.fidelity.value)}"
-            f" promotion={action.promotion_requested}{gate_info}"
+            f" rollouts={len(batch.rollouts)} v={transition.next_state_version}"
+            f" target={target}{gate_info}"
         )
 
     print("\n=== Certified Archive ===")
@@ -147,7 +175,12 @@ def main() -> None:
     for k, v in ledger.remaining(episode_id=manifest.episode_id).items():
         print(f"  {k}: {v}")
 
-    print(f"\n=== Trajectory: {len(trajectory.transitions())} transitions, "
+    # The store is append-only JSONL and reloads what earlier runs wrote, so
+    # these counts accumulate across invocations. That is the point — it is
+    # the RL trainer's corpus — but delete reliability_trajectory.jsonl if you
+    # want a clean demo.
+    print(f"\n=== Trajectory (cumulative across runs): "
+          f"{len(trajectory.transitions())} transitions, "
           f"{len(trajectory.decisions())} decisions ===")
 
 

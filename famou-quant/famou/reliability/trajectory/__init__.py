@@ -31,6 +31,8 @@ def build_transition(
     costs: EvaluationCost,
     gate_verdict: Optional[GateVerdict] = None,
     done: bool = False,
+    next_state_version: Optional[int] = None,
+    stale: bool = False,
 ) -> Transition:
     return Transition(
         transition_id=f"tr_{uuid.uuid4().hex[:12]}",
@@ -44,6 +46,8 @@ def build_transition(
         costs=costs,
         done=done,
         state_version=decision.state_version,
+        next_state_version=next_state_version,
+        stale=stale,
         policy_version=decision.policy_version,
     )
 
@@ -65,17 +69,30 @@ class TrajectoryStore:
             self._load()
 
     def _load(self) -> None:
+        # transition_id -> live object, so trailing reward_update records can be
+        # applied to the transition they belong to. Without this the delayed
+        # rewards written by the RewardBuilder are silently lost on every
+        # resume, which is exactly the training signal offline RL needs.
+        index: Dict[str, Transition] = {}
         with self._path.open("r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
                 rec = json.loads(line)
-                if rec.get("kind") == "decision":
+                kind = rec.get("kind")
+                if kind == "decision":
                     d = DecisionRecord.model_validate(rec["payload"])
                     self._decisions[d.decision_id] = d
-                elif rec.get("kind") == "transition":
-                    self._transitions.append(Transition.model_validate(rec["payload"]))
+                elif kind == "transition":
+                    t = Transition.model_validate(rec["payload"])
+                    self._transitions.append(t)
+                    index[t.transition_id] = t
+                elif kind == "reward_update":
+                    payload = rec.get("payload") or {}
+                    target = index.get(payload.get("transition_id"))
+                    if target is not None:
+                        target.reward = float(payload["reward"])
 
     def _append(self, kind: str, payload: Dict[str, Any]) -> None:
         if self._path is None:

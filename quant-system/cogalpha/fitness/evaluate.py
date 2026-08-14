@@ -87,6 +87,7 @@ def evaluation_job(
         nan_ratio_limit=quality_cfg.nan_ratio_limit,
         min_coverage=quality_cfg.min_coverage,
         min_distinct_per_day=quality_cfg.min_distinct_per_day,
+        max_tie_ratio=quality_cfg.max_tie_ratio,
         abs_value_limit=quality_cfg.abs_value_limit,
         universe=_restrict(universe_mask, start, end) if universe_mask is not None else None,
     )

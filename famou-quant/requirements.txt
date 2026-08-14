@@ -1,5 +1,3 @@
---index-url https://pip.baidu-int.com/simple/
---trusted-host pip.baidu.com
 hatchling>=1.18.0
 build>=1.0.3
 pytest
@@ -16,7 +14,6 @@ langfuse==3.12.1
 cloudpickle
 ray==2.46.0
 semgrep
-famou-sdk
 fastapi
 google-genai
 scipy

@@ -166,12 +166,25 @@ def f(df):
 ''')
 alpha("L6_gated_reversal")('''
 def f(df):
-    """Level VI: 5-day reversal gated on the calm volatility regime."""
+    """Level VI: 5-day reversal weighted by the volatility and volume regime.
+
+    Reversal corrects overreaction, so it needs a move large for this stock (vol
+    above its own expanding median) made by a crowd (volume above its own 20-day
+    average). The two gates are near-orthogonal in the cross-section (-0.028), so
+    stacking them beats either alone. Weights are smooth rather than 0/1: a hard
+    gate put 47.9% of the cross-section on exactly zero and inverted the measured
+    RankIC. Kept in sync with seeds/L6_gated_reversal.py, which carries the
+    measurements and the out-of-sample decay.
+    """
     out = df.copy(); eps = 1e-12
-    r = out['close'].pct_change()
-    vol = r.rolling(20, min_periods=10).std()
-    gate = (vol <= vol.expanding(min_periods=60).median().shift(1)).astype(float)
-    return -(out['close'] / (out['close'].shift(5) + eps) - 1.0) * gate
+    rev = -(out['close'] / (out['close'].shift(5) + eps) - 1.0)
+    v = out['close'].pct_change().rolling(20, min_periods=10).std()
+    vol_r = (v + eps) / (v.expanding(min_periods=60).median().shift(1) + eps)
+    vlm_r = (out['volume'] + eps) / (
+        out['volume'].shift(1).rolling(20, min_periods=10).mean() + eps)
+    w_vol = vol_r ** 4 / (1.0 + vol_r ** 4)
+    w_vlm = vlm_r ** 4 / (1.0 + vlm_r ** 4)
+    return rev * w_vol * w_vlm
 ''')
 alpha("L6_stability_autocorr")('''
 def f(df):

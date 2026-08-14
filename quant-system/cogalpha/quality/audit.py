@@ -1,6 +1,6 @@
 """Static AST audit: structural and safety gate before anything is executed.
 
-Two jobs, both of which have to happen *before* the sandbox:
+Three jobs, all of which have to happen *before* the sandbox:
 
 1. **Contract** — exactly one top-level function, sane signature, a docstring.
 2. **Safety** — an import allow-list and a ban on the escape hatches
@@ -8,6 +8,10 @@ Two jobs, both of which have to happen *before* the sandbox:
    sandbox in :mod:`cogalpha.quality.sandbox` is the enforcement layer; this is
    the layer that keeps the obviously-hostile out of it, so a rejection costs no
    process spawn.
+3. **Honest missing data** — a ban on constant fills.  This one is here rather
+   than in :mod:`cogalpha.quality.numeric` because it is the *only* stage that can
+   see it: ``fillna(0)`` is undetectable downstream by construction, since its
+   whole effect is to make the missing values stop looking missing.
 
 Neither job overlaps with :mod:`cogalpha.quality.leakage`: causality is a separate
 concern with its own stage, because a look-ahead factor is *safe* to run — it is
@@ -110,6 +114,22 @@ FORBIDDEN_IO_METHODS: Set[str] = {
 }
 
 
+#: Calls that replace missing values with a constant.
+#:
+#: Rejected because the numerical-stability gate *measures* missingness:
+#: ``nan_ratio_limit`` is the check that says "this alpha could not compute a value
+#: often enough to be usable", and ``fillna(0)`` drives the measured ratio to zero
+#: without supplying a single value.  The second harm is cross-sectional: a stock
+#: with no history and a stock genuinely reading zero end up on the same value, so
+#: the ranking cannot separate them and they join one large tie group (see
+#: ``NumericReport.mean_tie_ratio``).
+#:
+#: Method-based fills (``ffill``, ``bfill``, ``fillna(method=...)``) are *not*
+#: listed: they propagate an observed value rather than inventing one, which is a
+#: defensible modelling choice with its own causality story.
+CONSTANT_FILL_CALLS: Set[str] = {"fillna", "nan_to_num"}
+
+
 @dataclass
 class AuditResult:
     """Outcome of the static audit."""
@@ -124,6 +144,58 @@ class AuditResult:
     def detail(self) -> str:
         """Findings joined into one line, for the CheckReport detail field."""
         return "; ".join(self.issues) if self.issues else "clean"
+
+
+def _is_numeric_literal(node: ast.AST) -> bool:
+    """True for a numeric literal, including a signed one (``-1``, ``+0.0``)."""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        return _is_numeric_literal(node.operand)
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, (int, float))
+        and not isinstance(node.value, bool)
+    )
+
+
+def _constant_fill_issue(node: ast.Call) -> Optional[str]:
+    """Describe the constant fill in ``node``, or ``None`` if it is not one.
+
+    Matches on the called name only, so ``s.fillna(0)``, ``np.nan_to_num(s)`` and a
+    bare ``nan_to_num(s)`` are all caught.  Deliberately *not* type-aware: an alpha
+    only ever holds pandas/numpy objects, so a false positive would need a
+    user-defined ``fillna``, which the one-function contract already forbids.
+    """
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        name = func.attr
+    elif isinstance(func, ast.Name):
+        name = func.id
+    else:
+        return None
+
+    if name not in CONSTANT_FILL_CALLS:
+        return None
+
+    if name == "nan_to_num":
+        # Substitutes 0.0 for NaN by default and has no non-constant form.
+        return (
+            "nan_to_num() replaces missing values with a constant. Leave them NaN: "
+            "the NaN-ratio and tie-mass checks exist to see them"
+        )
+
+    # fillna: only a literal is a problem. fillna(method='ffill') and
+    # fillna(some_series) both propagate information rather than inventing it.
+    filled = next((a for a in node.args if not isinstance(a, ast.Starred)), None)
+    if filled is None:
+        filled = next((kw.value for kw in node.keywords if kw.arg == "value"), None)
+    if filled is None or not _is_numeric_literal(filled):
+        return None
+    return (
+        "fillna() with a constant hides missing data: it drives the measured NaN "
+        "ratio to zero, and it puts a stock with no history on the same value -- "
+        "and therefore the same rank -- as one genuinely reading that number. "
+        "Leave missing values as NaN"
+    )
 
 
 def audit_code(
@@ -240,6 +312,17 @@ def audit_code(
             # Lambdas are fine and common in pandas apply; no issue. Kept explicit
             # so a future reader does not add a ban by accident.
             continue
+
+    # ----------------------------------------------------------- missing data
+    # Deduplicated: a factor that fills three intermediates should say so once.
+    seen_fills: Set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        issue = _constant_fill_issue(node)
+        if issue is not None and issue not in seen_fills:
+            seen_fills.add(issue)
+            issues.append(issue)
 
     return AuditResult(
         ok=not issues,

@@ -135,6 +135,51 @@ class TestFidelityEvaluator:
         assert manifest.sealed_promotion.start not in seen.values()
 
 
+class TestEvidenceBuilder:
+    """B2 regression: ICIR is a within-run time-series ratio, so it must come
+    from the harness. Reconstructing it from cross-seed dispersion inflates it
+    by an order of magnitude for typical seed spreads."""
+
+    def _build(self, manifest, raw):
+        from famou.reliability.types import EvaluationCost
+
+        return EvidenceBuilder().build(
+            candidate_id="c1",
+            manifest=manifest,
+            fidelity=Fidelity.F2_FULL,
+            raw=raw,
+            cost=EvaluationCost(),
+        )
+
+    def test_per_seed_icir_used_verbatim(self, manifest):
+        ev = self._build(
+            manifest,
+            {
+                "validity": 1.0,
+                "per_seed_rank_ic": [0.050, 0.058, 0.062],
+                "per_seed_icir": [0.38, 0.44, 0.41],
+            },
+        )
+        assert ev.icir.n_seeds == 3
+        assert ev.icir.mean == pytest.approx(0.41, abs=1e-6)
+        # and it is NOT the old cross-seed reconstruction
+        assert ev.icir.mean < 1.0
+
+    def test_scalar_icir_fallback(self, manifest):
+        ev = self._build(
+            manifest,
+            {"validity": 1.0, "per_seed_rank_ic": [0.05, 0.06], "icir": 0.4},
+        )
+        assert ev.icir.mean == pytest.approx(0.4)
+
+    def test_no_icir_reported_means_none(self, manifest):
+        ev = self._build(
+            manifest, {"validity": 1.0, "per_seed_rank_ic": [0.050, 0.058, 0.062]}
+        )
+        assert ev.icir is None  # never fabricated from rank_ic dispersion
+        assert ev.rank_ic.n_seeds == 3
+
+
 class TestExperts:
     def test_gbdt_expert_produces_valid_candidate(self):
         expert = GBDTExpert(ExpertKind.MUTATE, rng_seed=0)
@@ -169,6 +214,21 @@ class TestExperts:
         assert StaticChecker().check(program).passed
         params = expert.extract_hyperparams(program)
         assert "hidden_dims" in params
+
+    def test_boolean_hyperparams_render_as_python(self):
+        """Regression: HYPERPARAMS used to be rendered with json.dumps, which
+        emits `true` — a NameError at import time. GBDT has no booleans so the
+        tests passed while every MLP candidate died in the subprocess."""
+        expert = NNExpert(ExpertKind.EXPLORE, rng_seed=1, family="mlp")
+        program = expert.propose(
+            StructuredAction(expert=ExpertKind.EXPLORE, model_family="mlp"),
+            [], iteration=1,
+        )
+        assert "true" not in program.code.split("def ")[0]
+        # the real check: it must actually execute as Python
+        namespace: dict = {}
+        exec(compile(program.code.split("def load_split_config")[0], "<c>", "exec"), namespace)
+        assert isinstance(namespace["HYPERPARAMS"]["layer_norm"], bool)
 
     def test_nn_expert_llm_path(self):
         def fake_llm_edit(parent_code, action):

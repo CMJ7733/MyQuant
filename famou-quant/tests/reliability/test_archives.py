@@ -85,12 +85,42 @@ class TestSearchArchive:
         assert archive.code_hash_exists("dup")
         assert not archive.code_hash_exists("other")
 
+    def test_lineage_survives_reregistration(self, state_store):
+        """B1 regression: registering the candidate first and its lineage
+        second used to hit an early return and drop the lineage silently."""
+        archive = SearchArchive(state_store)
+        archive.add_candidate("c1", episode_id="E1", model_family="gbdt", code_hash="h")
+        archive.add_candidate(
+            "c1", episode_id="E1", model_family="gbdt", code_hash="h",
+            lineage=CandidateLineage(
+                candidate_id="c1", parent_ids=["p0"], expert="mutate"
+            ),
+        )
+        lineage = archive.get_lineage("c1")
+        assert lineage is not None
+        assert lineage.parent_ids == ["p0"]
+        assert lineage.expert == "mutate"
+
+    def test_gate_attempts_counter(self, state_store):
+        archive = SearchArchive(state_store)
+        archive.add_candidate("c1", episode_id="E1", model_family="gbdt", code_hash="h")
+        assert archive.gate_attempts("c1") == 0
+        archive.record_gate_attempt(
+            "c1",
+            GateVerdict(
+                verdict=GateVerdictKind.REJECT,
+                reason_code=GateReasonCode.NO_IMPROVEMENT,
+            ),
+        )
+        assert archive.gate_attempts("c1") == 1
+        assert archive.get_candidate("c1")["last_gate_verdict"]["verdict"] == "REJECT"
+
 
 class TestCertifiedAdmission:
-    def _setup(self, state_store):
+    def _setup(self, state_store, manifest, ledger):
         search = SearchArchive(state_store)
         certified = CertifiedArchive(state_store)
-        admission = CertifiedAdmission(search, certified)
+        admission = CertifiedAdmission(search, certified, manifest, ledger)
         search.add_candidate(
             "cand_1", episode_id="E1", model_family="gbdt",
             code_hash="hash_of_code",
@@ -98,7 +128,7 @@ class TestCertifiedAdmission:
         )
         return search, certified, admission
 
-    def _request(self, ledger, manifest, code_hash):
+    def _request(self, ledger, manifest, code_hash, *, consume: bool = True):
         req = build_gate_request(
             candidate_id="cand_1",
             candidate_code="placeholder",
@@ -106,10 +136,14 @@ class TestCertifiedAdmission:
             ledger=ledger,
         )
         req.candidate_code_hash = code_hash  # align with archive record
+        if consume:
+            # Stand in for the gate having actually run: admission requires
+            # the one-time token to be in the 'consumed' state.
+            assert ledger.consume_gate_token(req.query_token)
         return req
 
     def test_promote_admits(self, state_store, ledger, manifest):
-        search, certified, admission = self._setup(state_store)
+        search, certified, admission = self._setup(state_store, manifest, ledger)
         req = self._request(ledger, manifest, "hash_of_code")
         verdict = GateVerdict(
             verdict=GateVerdictKind.PROMOTE,
@@ -122,7 +156,7 @@ class TestCertifiedAdmission:
         assert search.get_lineage("cand_1").certified
 
     def test_reject_does_not_admit(self, state_store, ledger, manifest):
-        search, certified, admission = self._setup(state_store)
+        search, certified, admission = self._setup(state_store, manifest, ledger)
         req = self._request(ledger, manifest, "hash_of_code")
         verdict = GateVerdict(
             verdict=GateVerdictKind.REJECT,
@@ -132,7 +166,7 @@ class TestCertifiedAdmission:
         assert not certified.is_certified("cand_1")
 
     def test_hash_mismatch_rejected(self, state_store, ledger, manifest):
-        search, certified, admission = self._setup(state_store)
+        search, certified, admission = self._setup(state_store, manifest, ledger)
         req = self._request(ledger, manifest, "different_hash")
         verdict = GateVerdict(
             verdict=GateVerdictKind.PROMOTE,
@@ -140,6 +174,43 @@ class TestCertifiedAdmission:
         )
         assert not admission.verify_and_admit(req, verdict, model_family="gbdt")
         assert not certified.is_certified("cand_1")
+
+    # --- B4 regression: the three checks that used to be missing ----------
+
+    def test_unconsumed_token_rejected(self, state_store, ledger, manifest):
+        """A hand-made PROMOTE verdict must not admit: the gate never ran, so
+        the one-time token is still 'issued' rather than 'consumed'."""
+        search, certified, admission = self._setup(state_store, manifest, ledger)
+        req = self._request(ledger, manifest, "hash_of_code", consume=False)
+        verdict = GateVerdict(
+            verdict=GateVerdictKind.PROMOTE,
+            reason_code=GateReasonCode.ROBUST_IMPROVEMENT,
+        )
+        assert not admission.verify_and_admit(req, verdict, model_family="gbdt")
+        assert not certified.is_certified("cand_1")
+        assert "token" in admission.last_rejection
+
+    def test_protocol_version_mismatch_rejected(self, state_store, ledger, manifest):
+        search, certified, admission = self._setup(state_store, manifest, ledger)
+        req = self._request(ledger, manifest, "hash_of_code")
+        req.protocol_version = "protocol_b_v1"  # stale protocol
+        verdict = GateVerdict(
+            verdict=GateVerdictKind.PROMOTE,
+            reason_code=GateReasonCode.ROBUST_IMPROVEMENT,
+        )
+        assert not admission.verify_and_admit(req, verdict, model_family="gbdt")
+        assert "protocol version" in admission.last_rejection
+
+    def test_data_contract_mismatch_rejected(self, state_store, ledger, manifest):
+        search, certified, admission = self._setup(state_store, manifest, ledger)
+        req = self._request(ledger, manifest, "hash_of_code")
+        req.data_contract_hash = "0" * 64  # split ranges drifted since freezing
+        verdict = GateVerdict(
+            verdict=GateVerdictKind.PROMOTE,
+            reason_code=GateReasonCode.ROBUST_IMPROVEMENT,
+        )
+        assert not admission.verify_and_admit(req, verdict, model_family="gbdt")
+        assert "data contract" in admission.last_rejection
 
     def test_baseline_seeding(self, state_store):
         certified = CertifiedArchive(state_store)
@@ -213,3 +284,18 @@ class TestPromotionPolicy:
             ev, incumbent_rank_ic=0.05, sealed_queries_remaining=5, novelty=0.01
         )
         assert decision.action == "skip"
+
+    def test_already_gated_candidate_skips(self):
+        """C regression: a REJECTed candidate keeps satisfying every other
+        rule, so without this guard it is re-gated until the budget is gone."""
+        policy = PromotionPolicy()
+        ev = [make_evidence("c", Fidelity.F2_FULL, [0.07, 0.071, 0.069])]
+        decision = policy.evaluate(
+            ev,
+            incumbent_rank_ic=0.05,
+            sealed_queries_remaining=5,
+            novelty=0.5,
+            prior_gate_attempts=1,
+        )
+        assert decision.action == "skip"
+        assert "gate" in decision.reason

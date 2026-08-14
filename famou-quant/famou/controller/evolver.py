@@ -840,28 +840,44 @@ class Evolver:
             self._log_evolution_start()
 
         retry_queue: deque[Tuple[int, int, int]] = deque()
+        # Rollouts already planned by a batch decision but not yet submitted.
+        # Draining these before asking the strategy again is what keeps one
+        # decision -> N rollouts coherent.
+        planned_tasks: deque[BackendTask] = deque()
         terminal_error: Optional[Exception] = None
 
-        def _next_dispatch() -> Optional[Tuple[int, int, int]]:
+        def _next_task() -> Optional[BackendTask]:
+            """Next task to submit, or None when there is no work left.
+
+            Order: planned batch members -> retries -> a fresh decision.
+            Draining the current batch ahead of retries keeps one decision's
+            rollouts together; it only ever delays a retry by at most
+            max_batch_size slots, and planned_tasks drains monotonically so a
+            retry can never be starved.
+            """
+            if planned_tasks:
+                return planned_tasks.popleft()
             if retry_queue:
-                return retry_queue.popleft()
-            next_task = tracker.get_next()
-            if next_task is None:
+                island_id, iteration, attempt = retry_queue.popleft()
+                # A retry is its own decision (the failed rollout produced no
+                # evidence), so it goes through the single-rollout path.
+                return self._get_rollout_task(island_id, iteration, attempt=attempt)
+            next_slot = tracker.get_next()
+            if next_slot is None:
                 return None
-            island_id, iteration = next_task
-            return island_id, iteration, 1
+            island_id, iteration = next_slot
+            planned_tasks.extend(self._plan_rollout_tasks(island_id, iteration, tracker))
+            return planned_tasks.popleft() if planned_tasks else None
 
         try:
             # 1. 创建初始批次
             tasks = []
             initial_batch_size = min(max_workers, tracker.remaining_iterations)
-            
+
             for _ in range(initial_batch_size):
-                next_task = _next_dispatch()
-                if next_task is None:
+                task = _next_task()
+                if task is None:
                     break
-                island_id, iteration, attempt = next_task
-                task = self._get_rollout_task(island_id, iteration, attempt=attempt)
                 tasks.append(task)
             
             batch_handle = self.backend.submit_batch(tasks)
@@ -968,16 +984,10 @@ class Evolver:
                                     self.logger.warning(f"Failed to flush Langfuse: {e}")
                 
                 # 4. 提交新任务（如果有剩余）
-                next_task = _next_dispatch()
-                if next_task is not None:
-                    new_island_id, new_iteration, new_attempt = next_task
-                    new_task = self._get_rollout_task(
-                        new_island_id,
-                        new_iteration,
-                        attempt=new_attempt,
-                    )
+                new_task = _next_task()
+                if new_task is not None:
                     new_handle = self.backend.submit(new_task)
-                    
+
                     # 添加到批次
                     batch_handle.handles.append(new_handle)
                     batch_handle.task_ids.append(new_task.task_id)
@@ -1167,6 +1177,79 @@ class Evolver:
         )
 
         return backend_task
+
+    def _plan_rollout_tasks(
+        self,
+        island_id: int,
+        iteration: int,
+        tracker: "_IslandTracker",
+    ) -> List[BackendTask]:
+        """Ask the strategy for one decision and turn it into dispatchable tasks.
+
+        A strategy that overrides ``forward_batch()`` may answer with several
+        rollouts for a single decision; they are dispatched concurrently and
+        the strategy is told about each completion so it can commit them as a
+        unit. The default implementation returns a batch of one, which makes
+        this path behave exactly like the old single-rollout dispatch.
+
+        Batch size is bounded by what can actually run: the worker pool, and
+        the iteration slots still left in this experiment. Slots beyond the
+        first are consumed here, so the caller must not also consume one.
+
+        Multi-island note: ``_IslandTracker`` hands out slots round-robin
+        across islands, so consecutive slots belong to different islands
+        while a batch belongs to exactly one island's context. Batching is
+        therefore restricted to single-island runs; multi-island runs keep
+        the one-rollout-per-decision behaviour.
+        """
+        context = self._create_context(iteration, island_id)
+        rollout_history = self._get_island_rollout_history(island_id)
+
+        max_batch_size = 1
+        if self.config.num_islands == 1:
+            remaining_slots = tracker.remaining_iterations - tracker.total_iterations_dispatched
+            # +1: the slot for `iteration` was already taken by the caller
+            max_batch_size = max(1, min(self.config.max_workers, remaining_slots + 1))
+
+        batch = self.current_strategy.forward_batch(
+            context, rollout_history, max_batch_size=max_batch_size
+        )
+        rollouts = list(batch.rollouts)
+        if len(rollouts) > max_batch_size:
+            raise RuntimeError(
+                f"Strategy returned {len(rollouts)} rollouts but only "
+                f"{max_batch_size} could be dispatched. forward_batch() must "
+                "honour max_batch_size: the surplus rollouts have no iteration "
+                "slot to run in, and a strategy waiting for them would hang."
+            )
+
+        tasks: List[BackendTask] = []
+        for index, rollout in enumerate(rollouts):
+            if index == 0:
+                slot_island, slot_iteration = island_id, iteration
+            else:
+                slot = tracker.get_next()
+                if slot is None:  # defensive: max_batch_size should prevent this
+                    break
+                slot_island, slot_iteration = slot
+            tasks.append(
+                BackendTask.create(
+                    self.experiment.id,
+                    context,
+                    self._prepare_rollout_for_execution(rollout),
+                    self.engine,
+                    slot_island,
+                    slot_iteration,
+                    attempt=1,
+                )
+            )
+
+        if self.logger and len(tasks) > 1:
+            self.logger.info(
+                f"[Batch] island {island_id}: one decision -> {len(tasks)} "
+                f"concurrent rollouts (barrier={batch.barrier})"
+            )
+        return tasks
 
     def _execute_rollout(self, island_id: int, iteration: int) -> RolloutResult:
         """

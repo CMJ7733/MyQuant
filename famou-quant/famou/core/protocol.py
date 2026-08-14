@@ -356,10 +356,46 @@ class Strategy(ABC):
         """
         ...
 
+    def forward_batch(
+        self,
+        ctx: Context,
+        rollout_history: List["RolloutResult"],
+        max_batch_size: int = 1,
+    ) -> "WorkBatch":
+        """Decide a whole batch of rollouts in one decision. Optional.
+
+        The default implementation wraps ``forward()`` as a batch of one, so
+        every existing Strategy keeps working unchanged and the Evolver has a
+        single dispatch path.
+
+        Override this when one decision should fan out into several rollouts
+        that are executed concurrently and then committed together (e.g. "try
+        these 4 mutations, then update state once"). The Evolver guarantees:
+
+        - ``max_batch_size`` is how many rollouts it can actually dispatch
+          right now (bounded by the worker pool and the remaining iteration
+          budget). Returning more than that is an error, not a hint — the
+          extra rollouts have nowhere to run.
+        - Every dispatched rollout produces exactly one
+          ``on_rollout_complete`` or ``on_rollout_failed`` callback, so a
+          strategy that waits for a batch to finish can count them and will
+          not hang on a failed member.
+
+        Args:
+            ctx: Current context (same object ``forward()`` would receive)
+            rollout_history: Recent rollout history for this island
+            max_batch_size: Upper bound on ``len(batch.rollouts)``, >= 1
+
+        Returns:
+            WorkBatch with 1..max_batch_size rollouts.
+        """
+        from famou.core.data import WorkBatch
+
+        return WorkBatch.single(self.forward(ctx, rollout_history))
+
     def dump_state(self) -> Dict[str, Any]:
         """Dump strategy-level state for checkpoint persistence. Override in subclass."""
         return {}
-
     def load_state(self, state: Dict[str, Any]) -> None:
         """Restore strategy-level state from checkpoint. Override in subclass."""
         pass

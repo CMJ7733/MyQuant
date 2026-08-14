@@ -159,6 +159,34 @@ class BudgetLedger:
             self._store.set("reliability", "gate_tokens", token, value="consumed")
             return True
 
+    def token_status(self, token: str) -> Optional[str]:
+        """Lifecycle state of a gate token: 'issued' | 'consumed' | None.
+
+        Read by CertifiedAdmission: a verdict whose token was never consumed
+        did not come from the real gate, so it must not admit anything.
+        """
+        with self._lock:
+            return self._store.get("reliability", "gate_tokens", token, default=None)
+
+    def charge_final_query(self, episode_id: str) -> None:
+        """Spend the one-shot final-test query for an episode.
+
+        Separate from ``charge()`` because the final budget must never be
+        reachable from the ordinary evaluation path: only FinalTestService
+        calls this, and only after the experiment has been frozen.
+        """
+        with self._lock:
+            state = self._load()
+            budget = state.final_queries.get(episode_id)
+            if budget is None or budget.remaining < 1:
+                raise BudgetExhausted(
+                    f"final_queries[{episode_id}]",
+                    1.0,
+                    budget.remaining if budget else 0.0,
+                )
+            budget.spent += 1.0
+            self._save(state)
+
     def remaining(self, episode_id: Optional[str] = None) -> Dict[str, float]:
         """Compact remaining-budget view for the AgentObservation."""
         with self._lock:

@@ -33,7 +33,7 @@ llm:
   model: "deepseek-v4-flash"
   task_temperatures: [0.7, 0.8, 0.9, 1.0, 1.1, 1.2]
   checker_temperature: 0.8
-  max_tokens: 4096
+  max_tokens: 16000
 
 evolution:
   # §B.8: 13 of the 21 agents per run, selected by golden ratio.

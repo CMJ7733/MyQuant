@@ -368,7 +368,11 @@ class Context(BaseModel):
 
         Uses accessor for efficient access if available, otherwise falls back to population.
         """
-        if self.accessor:
+        # `is not None`, not truthiness: PopulationAccessor defines __len__, so
+        # an EMPTY accessor is falsy. Treating that as "no accessor" falls
+        # through to `population`, which Evolver-built Contexts do not set —
+        # an AttributeError on exactly the cold-start path.
+        if self.accessor is not None:
             return self.accessor.get_all()
 
         # Fallback to population for backward compatibility
@@ -383,7 +387,7 @@ class Context(BaseModel):
 
         Uses accessor for O(1) lookup if available, otherwise falls back to O(n) search.
         """
-        if self.accessor:
+        if self.accessor is not None:
             return self.accessor.get_by_id(program_id)
 
         # Fallback to population for backward compatibility

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from famou.reliability.archives import CertifiedArchive, SearchArchive
 from famou.reliability.budget import BudgetLedger
+from famou.reliability.judge import FailureAnalyzer, FailureKind
 from famou.reliability.types import EvidenceVector, Fidelity
 
 
@@ -29,6 +30,10 @@ class CandidateSummary(BaseModel):
     highest_fidelity: int = 0
     failure_stage: Optional[str] = None
     novelty: Optional[float] = None
+    gate_attempts: int = Field(
+        default=0,
+        description="sealed queries already spent on this candidate",
+    )
 
 
 class AgentObservation(BaseModel):
@@ -65,10 +70,15 @@ class ObservationBuilder:
         search_archive: SearchArchive,
         certified_archive: CertifiedArchive,
         ledger: BudgetLedger,
+        analyzer: Optional[FailureAnalyzer] = None,
     ):
         self._search = search_archive
         self._certified = certified_archive
         self._ledger = ledger
+        # Failure patterns are reported as FailureKind, not raw error strings:
+        # the taxonomy is stable across runs, so it can be counted and learned
+        # from. See famou.reliability.judge.
+        self._analyzer = analyzer or FailureAnalyzer()
 
     def build(
         self,
@@ -109,8 +119,9 @@ class ObservationBuilder:
         recent = list(uncertified)[-failure_window:]
         for cid, _ in recent:
             for ev in self._search.get_evidence(cid):
-                if ev.failure_stage:
-                    failures[ev.failure_stage] = failures.get(ev.failure_stage, 0) + 1
+                kind = self._analyzer.classify(ev)
+                if kind != FailureKind.NONE:
+                    failures[kind.value] = failures.get(kind.value, 0) + 1
 
         return AgentObservation(
             state_version=state_version,
@@ -157,4 +168,5 @@ class ObservationBuilder:
                 (e.failure_stage for e in reversed(evidence) if e.failure_stage), None
             ),
             novelty=best.novelty if best else None,
+            gate_attempts=int(meta.get("gate_attempts", 0)),
         )

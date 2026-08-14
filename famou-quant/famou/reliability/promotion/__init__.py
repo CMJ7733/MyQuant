@@ -61,6 +61,11 @@ class PromotionPolicy:
     3. Mean RankIC below incumbent     -> skip
     4. Too similar to certified member -> skip (don't waste sealed queries)
     5. Otherwise                       -> request_gate
+
+    Rule 0 sits above all of them: a candidate that has already been through
+    the gate is never re-submitted on the same evidence. Re-submission is the
+    single easiest way to burn a per-episode sealed budget, because a REJECTed
+    candidate keeps satisfying rules 1-5 forever.
     """
 
     def __init__(
@@ -70,11 +75,13 @@ class PromotionPolicy:
         max_rank_ic_cv: float = 1.0,
         min_improvement_over_incumbent: float = 0.0,
         min_novelty: float = 0.05,
+        max_gate_attempts: int = 1,
     ):
         self.min_f2_seeds = min_f2_seeds
         self.max_rank_ic_cv = max_rank_ic_cv
         self.min_improvement_over_incumbent = min_improvement_over_incumbent
         self.min_novelty = min_novelty
+        self.max_gate_attempts = max_gate_attempts
 
     def evaluate(
         self,
@@ -83,9 +90,17 @@ class PromotionPolicy:
         incumbent_rank_ic: Optional[float],
         sealed_queries_remaining: float,
         novelty: Optional[float] = None,
+        prior_gate_attempts: int = 0,
     ) -> PromotionDecision:
         if sealed_queries_remaining < 1:
             return PromotionDecision("skip", "no sealed query budget remaining")
+
+        if prior_gate_attempts >= self.max_gate_attempts:
+            return PromotionDecision(
+                "skip",
+                f"already submitted to the gate {prior_gate_attempts}x; "
+                "re-submission needs materially new evidence",
+            )
 
         f2 = [e for e in evidence if e.fidelity == Fidelity.F2_FULL and e.is_valid]
         if not f2:
@@ -94,15 +109,30 @@ class PromotionPolicy:
                 return PromotionDecision("raise_fidelity", "no valid evidence yet")
             return PromotionDecision("raise_fidelity", "only F1 evidence; need F2")
 
-        # Merge per-seed RankIC across F2 evaluations
+        # Merge stability evidence across F2 evaluations.
+        #
+        # Trained candidates: dispersion across SEEDS.
+        # Deterministic candidates (formulas): re-running with another seed
+        # returns the identical number, so seed dispersion is structurally zero
+        # and would sail through any variance check while proving nothing. For
+        # those, contiguous SUBPERIODS carry the real question — does it hold
+        # up across time, or only in one regime?
         samples: List[float] = []
-        for e in f2:
-            if e.rank_ic is not None:
-                samples.extend(e.rank_ic.per_seed or [e.rank_ic.mean])
+        deterministic = any(e.complexity.get("deterministic") for e in f2)
+        if deterministic:
+            for e in f2:
+                samples.extend(e.regime_stability.values())
+            evidence_unit = "subperiods"
+        else:
+            for e in f2:
+                if e.rank_ic is not None:
+                    samples.extend(e.rank_ic.per_seed or [e.rank_ic.mean])
+            evidence_unit = "F2 seeds"
+
         if len(samples) < self.min_f2_seeds:
             return PromotionDecision(
                 "more_seeds",
-                f"only {len(samples)} F2 seeds (< {self.min_f2_seeds})",
+                f"only {len(samples)} {evidence_unit} (< {self.min_f2_seeds})",
             )
 
         import statistics
@@ -112,14 +142,21 @@ class PromotionPolicy:
         if mean_ic > 0 and std_ic / abs(mean_ic) > self.max_rank_ic_cv:
             return PromotionDecision(
                 "more_seeds",
-                f"RankIC CV {std_ic / abs(mean_ic):.2f} too high; add seeds",
+                f"RankIC CV {std_ic / abs(mean_ic):.2f} across {evidence_unit} "
+                "too high",
             )
 
+        # Compare on the candidate's own headline RankIC, not the stability
+        # sample: subperiod means and the full-window mean are not the same
+        # quantity, and the incumbent is measured on the full window.
+        headline = statistics.fmean(
+            [e.rank_ic.mean for e in f2 if e.rank_ic is not None] or [mean_ic]
+        )
         if incumbent_rank_ic is not None:
-            if mean_ic < incumbent_rank_ic + self.min_improvement_over_incumbent:
+            if headline < incumbent_rank_ic + self.min_improvement_over_incumbent:
                 return PromotionDecision(
                     "skip",
-                    f"mean RankIC {mean_ic:.4f} not above incumbent "
+                    f"mean RankIC {headline:.4f} not above incumbent "
                     f"{incumbent_rank_ic:.4f}",
                 )
 
@@ -133,7 +170,8 @@ class PromotionPolicy:
 
         return PromotionDecision(
             "request_gate",
-            f"stable F2 evidence (n={len(samples)}, mean={mean_ic:.4f})",
+            f"stable F2 evidence (n={len(samples)} {evidence_unit}, "
+            f"mean={headline:.4f})",
         )
 
 

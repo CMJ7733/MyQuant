@@ -31,6 +31,25 @@ ALPHA_CONTRACT = """FUNCTION CONTRACT (mandatory)
   future bar are forbidden and will be rejected automatically.
 - The factor must vary across stocks on a given day. A constant, or a value that
   is NaN for more than 30% of observations, is worthless and will be discarded.
+- Leave missing values as NaN. `.fillna(0)`, `nan_to_num` and any other constant
+  fill are rejected automatically: NaN means "not computable yet", and replacing
+  it with a number gives a stock with no history the same rank as one genuinely
+  reading that number.
+- Do not collapse part of the universe onto one value. `clip(lower=0)`,
+  `max(x, 0)` and 0/1 masks send every stock on the inactive side to exactly
+  zero; those stocks then form one tie group, share one rank, and the rank
+  correlation is destroyed. A day with more than half the cross-section on a
+  single value is rejected. Use a smooth, strictly monotone weight (a ratio, a
+  z-score, `tanh`, a rank) instead of a gate, or leave the inactive side NaN.
+- Weights must be dimensionless. Raw volume spans orders of magnitude across
+  stocks, so `sum(V*r)/sum(V)` is decided almost entirely by the single
+  largest-volume day in the window. Normalise before weighting: `V / SMA(V, n)`,
+  a log, or a rolling rank.
+- Check `max`/`min` for a dominating argument before you write it. Because
+  `low <= close <= high` always holds, `max(high-low, |high-close|, |low-close|)`
+  is identically `high - low` and the other two terms are dead code. True Range
+  is defined against the PREVIOUS close:
+  `max(high-low, |high-close.shift(1)|, |low-close.shift(1)|)`.
 
 OUTPUT FORMAT
 
@@ -79,7 +98,7 @@ MUTATE_PROMPT = """[ROLE: mutate]
 Mutate the alpha factor below: make a small, deliberate change to its logic.
 
 A mutation is not a rewrite. Change one thing -- the normalisation, the window
-structure, the transformation applied at the end, the way missing data is handled
+structure, the transformation applied at the end, the gating or weighting scheme
 -- and keep the economic hypothesis intact. State in the docstring what you
 changed and why you expect it to help.
 
@@ -163,13 +182,25 @@ REPORTED ISSUES
 # ----------------------------------------------------------------------- judge
 
 JUDGE_PROMPT = """[ROLE: judge]
-Evaluate this alpha factor on three criteria.
+Evaluate this alpha factor on four criteria.
 
 1. Logically consistent -- correct operator ordering, coherent data flow, no
-   degenerate expressions (e.g. a term that cancels to a constant).
+   degenerate expressions. Check specifically for: (a) a `max`/`min` in which one
+   argument provably dominates the others, which makes the rest dead code -- since
+   `low <= close <= high`, a True Range written against the current close instead
+   of the previous one reduces to `high - low`; (b) a term that cancels to a
+   constant; (c) a "different" normalisation that is only a positive monotone
+   rescaling of another and so changes nothing cross-sectionally.
 2. Technically correct -- valid use of rolling windows, transforms and TA-Lib
    calls; windows long enough to be meaningful and short enough to leave data.
-3. Economically meaningful -- rests on a stated market mechanism rather than an
+3. Distributionally usable -- the output must not pile a large share of the
+   cross-section onto one value. A gate multiplied into a signal
+   (`clip(lower=0)`, `max(x, 0)`, a 0/1 mask) sends the entire inactive side to
+   exactly zero, and a constant `fillna` adds the warm-up rows to that same
+   group; both give half the universe one shared rank and destroy the rank
+   correlation. Also check that every weight is dimensionless -- raw volume or
+   price as a weight lets one stock's units, or one day, decide the average.
+4. Economically meaningful -- rests on a stated market mechanism rather than an
    arbitrary combination of columns. A fabricated indicator with no rationale
    fails this criterion even if the code is flawless.
 
