@@ -276,10 +276,16 @@ class HeuristicMetaPolicy:
         #    The action targets THAT candidate directly (promotion_target_id).
         #    Mutating it first and gating the mutation would spend the sealed
         #    query on a candidate that has one evaluation to its name.
-        #    Candidates that already went through the gate are skipped, else a
-        #    REJECTed one keeps re-qualifying and drains the sealed budget.
+        #    ``promotion_checked_at`` is what stops this branch re-firing: a
+        #    candidate the policy already declined spends no sealed query, so
+        #    a guard on gate_attempts alone would re-propose it forever.
         for cand in obs.top_visible_evidence:
-            if cand.n_f2_seeds >= 3 and not cand.certified and cand.gate_attempts == 0:
+            if (
+                cand.n_f2_seeds >= 3
+                and not cand.certified
+                and cand.gate_attempts == 0
+                and cand.promotion_checked_at < cand.n_evidence
+            ):
                 return StructuredAction(
                     expert=ExpertKind.LOCAL_HPO,
                     parent_ids=[cand.candidate_id],
@@ -291,7 +297,10 @@ class HeuristicMetaPolicy:
                     rationale="stable F2 evidence; request sealed promotion",
                 )
 
-        # 2. Raise fidelity for promising F1-only candidates
+        # 2. Raise fidelity for promising F1-only candidates.
+        #    Targets the candidate ITSELF (reeval_target_id): mutating it would
+        #    leave the original at F1, so this branch would re-fire forever and
+        #    the search would never move on.
         for cand in obs.top_visible_evidence:
             if cand.highest_fidelity == 1 and cand.best_rank_ic is not None:
                 return StructuredAction(
@@ -300,6 +309,7 @@ class HeuristicMetaPolicy:
                     model_family=cand.model_family,
                     fidelity=Fidelity.F2_FULL,
                     seed_list=[11, 29, 47],
+                    reeval_target_id=cand.candidate_id,
                     rationale="promising F1 candidate; escalate to F2 multi-seed",
                 )
 
@@ -593,6 +603,50 @@ class ReliabilityAwareQuantStrategy(Strategy):
             parents = list(self.experiment_archive_values(ctx))[:1]
         expert = self._pick_expert(action)
 
+        # --- re-evaluation decision --------------------------------------
+        # Escalate an existing candidate's fidelity instead of generating a
+        # variant of it. Runs in a worker like any other evaluation, but
+        # registers no new candidate: the evidence attaches to the original.
+        reeval_target = None
+        if action.reeval_target_id:
+            reeval_target = ctx.get_program_by_id(action.reeval_target_id)
+            if reeval_target is None and self.logger:
+                self.logger.warning(
+                    f"[Reliability] reeval target {action.reeval_target_id} "
+                    "not in context; generating instead"
+                )
+        if reeval_target is not None:
+            self._register_batch(decision, self._barrier.open(decision, expected=1),
+                                 action)
+            self._candidate_context[reeval_target.id] = {
+                "decision_id": decision.decision_id,
+                "parent_ids": [p.id for p in parents],
+                "model_family": reeval_target.meta.get("model_family", "unknown"),
+                "code_hash": self._code_hash(reeval_target),
+                "code": reeval_target.code,
+                "expert": action.expert.value,
+                "package": None,
+                "register": False,      # candidate already in the archive
+            }
+            return WorkBatch.single(
+                Rollout(
+                    modules=[
+                        _FixedSelect(reeval_target.id),
+                        _PreGeneratedGenerate(reeval_target),
+                        _ReliabilityEvaluate(
+                            self.evaluator,
+                            fidelity=action.fidelity,
+                            seed_list=action.seed_list,
+                            decision_id=decision.decision_id,
+                            max_gpu_seconds=action.max_gpu_seconds,
+                        ),
+                    ],
+                    name="reliability_reeval",
+                ),
+                decision_id=decision.decision_id,
+                phase="reeval",
+            )
+
         rollouts: List[Rollout] = []
         accumulator = self._barrier.open(decision, expected=n)
         self._register_batch(decision, accumulator, action)
@@ -728,7 +782,9 @@ class ReliabilityAwareQuantStrategy(Strategy):
             episode_id=self.manifest.episode_id,
             model_family=info["model_family"],
             code_hash=info["code_hash"],
-            register=evidence is not None,
+            # A re-evaluation attaches evidence to a candidate that is already
+            # in the archive; only a genuinely new candidate registers.
+            register=evidence is not None and info.get("register", True),
             meta={
                 "expert": info["expert"],
                 "package": (
@@ -871,6 +927,10 @@ class ReliabilityAwareQuantStrategy(Strategy):
         assert self._search is not None
         candidate_id = outcome.candidate_id
         evidence_list = list(self._search.get_evidence(candidate_id)) + list(staged)
+        # Record the check regardless of the verdict — see
+        # SearchArchive.record_promotion_check for why a declined promotion
+        # still has to leave a trace.
+        outcome.promotion_checked_at = len(evidence_list)
         remaining = self.ledger.remaining(episode_id=self.manifest.episode_id)
         incumbent = self._current_incumbent_rank_ic()
         best = self._search.best_evidence(candidate_id)

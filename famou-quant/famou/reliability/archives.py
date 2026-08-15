@@ -190,6 +190,36 @@ class SearchArchive:
         record = self.get_candidate(candidate_id)
         return int(record.get("gate_attempts", 0)) if record else 0
 
+    def record_promotion_check(self, candidate_id: str, n_evidence: int) -> None:
+        """Note that the promotion policy has judged this candidate.
+
+        Distinct from ``gate_attempts``, which counts sealed queries actually
+        spent. A candidate the policy DECLINED to gate spends nothing, so
+        gate_attempts stays 0 — and a heuristic guarded only on that will
+        re-propose the same candidate every iteration forever. Recording the
+        evidence count at check time makes the guard precise: reconsider a
+        candidate exactly when new evidence has arrived, not sooner.
+        """
+        self._guard.check("SearchArchive.record_promotion_check")
+        with self._lock:
+            candidates = self._store.get("reliability", "search_archive", "candidates")
+            record = candidates.get(candidate_id)
+            if record is None:
+                return
+            record["promotion_checked_at"] = int(n_evidence)
+            self._store.set(
+                "reliability", "search_archive", "candidates", value=candidates
+            )
+
+    def promotion_checked_at(self, candidate_id: str) -> int:
+        record = self.get_candidate(candidate_id)
+        return int(record.get("promotion_checked_at", 0)) if record else 0
+
+    def evidence_count(self, candidate_id: str) -> int:
+        return len(self._store.get(
+            "reliability", "search_archive", "evidence", candidate_id, default=[]
+        ))
+
     # ------------------------------------------------------------------
     def get_evidence(
         self,

@@ -98,6 +98,9 @@ class CandidateOutcome:
     gate_verdict: Optional[GateVerdict] = None
     #: eval_ids of already-committed evidence this outcome is reasoning about
     prior_evidence_refs: List[str] = field(default_factory=list)
+    #: evidence count when the promotion policy judged this candidate; None if
+    #: promotion was never considered for it in this batch
+    promotion_checked_at: Optional[int] = None
     cost: EvaluationCost = field(default_factory=EvaluationCost)
 
     def evidence_refs(self) -> List[str]:
@@ -280,6 +283,11 @@ class BarrierCommit:
             )
         for evidence in outcome.evidence:
             self._search.add_evidence(evidence)
+
+        if outcome.promotion_checked_at is not None:
+            self._search.record_promotion_check(
+                outcome.candidate_id, outcome.promotion_checked_at
+            )
 
         if outcome.gate_verdict is None:
             return

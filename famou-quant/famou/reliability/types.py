@@ -646,6 +646,16 @@ class StructuredAction(BaseModel):
             "mutation of that candidate instead."
         ),
     )
+    reeval_target_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Re-evaluate an EXISTING candidate at a higher fidelity. Same trap "
+            "as promotion_target_id: 'escalate this promising F1 candidate' "
+            "implemented as a mutation leaves the original at F1 forever, so "
+            "the escalation heuristic re-fires every iteration and the search "
+            "spins in place."
+        ),
+    )
     rationale: str = ""
 
     model_config = ConfigDict(use_enum_values=False)

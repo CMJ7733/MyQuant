@@ -34,6 +34,12 @@ class CandidateSummary(BaseModel):
         default=0,
         description="sealed queries already spent on this candidate",
     )
+    n_evidence: int = Field(default=0, description="evidence items accumulated")
+    promotion_checked_at: int = Field(
+        default=0,
+        description="evidence count when promotion was last judged; equal to "
+        "n_evidence means there is nothing new to reconsider",
+    )
 
 
 class AgentObservation(BaseModel):
@@ -169,4 +175,6 @@ class ObservationBuilder:
             ),
             novelty=best.novelty if best else None,
             gate_attempts=int(meta.get("gate_attempts", 0)),
+            n_evidence=len(evidence),
+            promotion_checked_at=int(meta.get("promotion_checked_at", 0)),
         )
