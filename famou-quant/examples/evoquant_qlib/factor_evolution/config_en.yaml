@@ -1,0 +1,176 @@
+# =============================================================================
+# LLM-driven factor evolution on the frozen qlib snapshot
+# =============================================================================
+#
+# Run:
+#   /opt/conda/envs/quant/bin/python -m famou \
+#     -c examples/evoquant_qlib/factor_evolution/config.yaml \
+#     -p examples/evoquant_qlib/factor_evolution/seed_factor.py \
+#     -e examples/evoquant_qlib/factor_evolution/evaluator.py
+#
+# EPISODE: defaults to E1, the DEVELOPMENT episode (train 2008-2013 / dev 2014).
+#     Its final_test was already burned under splits v1, so it is the sandbox --
+#     look at it as often as you like while the method is still moving. The
+#     evaluation episodes' only value is that nobody has looked yet; run one of
+#     those only once the seed, prompt and fitness are frozen:
+#
+#         FAMOU_EPISODE=E11 python -m famou -c ... -p ... -e ...
+#
+#     Dates come from protocol_b/splits_v2.yaml, never from this file.
+
+experiment:
+  name: factor_evolution
+  language: python
+  # Valid names come from the FILENAMES in famou/strategies/ (_registry.py:257):
+  # greedy, top_cluster, adaptive_cluster, creative_exploration, ...
+  # "standard" is NOT one of them despite appearing in older example configs.
+  strategy: adaptive_cluster
+
+  # Start small to confirm the chain works end-to-end, then raise.
+  max_iterations: 50
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  island:
+    num_islands: 5
+    island_size: 10
+    migration_interval: 20
+    migration_size: 1
+    migration_topology: ring
+
+  # Candidates that fail the look-ahead probe come back with a precise reason;
+  # the debug loop lets the LLM act on it instead of the program being discarded.
+  debug:
+    enabled: true
+    max_iterations: 2
+
+  task_description: |
+    # Evolve a stock-selection factor from raw market data
+
+    ## Goal
+    Implement `compute_factor(panel)` returning a cross-sectional factor matrix.
+    A higher factor value should predict a higher forward return. The objective
+    is to maximise the **mean daily RankIC**.
+
+    ## Data interface
+
+    `panel` exposes these aligned `(n_days, n_instruments)` float64 matrices:
+
+    ```
+    panel.open    panel.high    panel.low    panel.close
+    panel.volume  panel.vwap    panel.amount
+    ```
+
+    plus `panel.dates` (list[str], ascending) and `panel.instruments` (list[str]).
+
+    - Axis 0 is trading days (ascending); axis 1 is stocks.
+    - `NaN` means the stock was not in the universe or did not trade that day.
+      This is normal and expected: index membership changes over time, so roughly
+      44% of the cells are NaN.
+    - Prices are back-adjusted, so you can divide across dates directly to get
+      returns.
+
+    ## Function signature
+
+    ```python
+    import numpy as np
+
+    def compute_factor(panel):
+        """
+        Args:
+            panel: the market panel described above
+        Returns:
+            np.ndarray of shape (n_days, n_instruments).
+            NaN is allowed -- NaN entries are dropped from that day's
+            cross-section automatically.
+        """
+        ...
+    ```
+
+    ## The one hard constraint: never use future data
+
+    **Row t of your output may only depend on rows 0..t of the input.**
+
+    Using row t+1 or later is look-ahead. The evaluator detects this
+    mechanically with a **causality test**: it truncates the panel to day T,
+    calls your function again, and requires row T to be **bit-for-bit identical**
+    to row T of the full run (including where the NaNs are). A factor that uses
+    future data cannot pass this test; such a candidate is scored `validity=0`
+    and 0. This is not a human code review, so there is no way around it.
+
+    Common **accidental** look-ahead to avoid:
+
+    - `np.nanmean(x, axis=0)` / `x.std(axis=0)` / `np.nanpercentile(x, axis=0)`
+      -- a full-sample statistic along the time axis includes data from after t.
+      To standardise, use the **cross-section** (`axis=1`) or a **rolling window**.
+    - Misaligned slicing, e.g. `close[21:] / close[1:-20]` aligns row t to
+      close[t+1].
+    - Deciding which cells to set to NaN using future information.
+
+    Cross-sectional operations (along axis=1, i.e. across stocks within one day)
+    are always safe, because they only touch that day's data.
+
+    ## Scoring
+
+    Computed on the visible_dev segment (~240 trading days):
+
+    - **`rank_ic` (= combined_score, drives the search)**: the daily Spearman
+      correlation between the factor and the forward return, averaged over the
+      whole period.
+    - `ic`: the Pearson version.
+    - `icir`: `rank_ic / std(daily RankIC)`, a measure of stability.
+    - `sharpe`: annualised Sharpe of a long-short decile portfolio sorted on the
+      factor.
+    - `subperiod_rank_ic`: RankIC of each of 4 equal sub-periods. If the four
+      signs disagree, the factor only works in one regime and is not robust.
+
+    Six years of data before the scoring window are also in the panel but are
+    **not scored**. They exist so that a rolling window is already warm on the
+    first day of the scoring window.
+
+    ## Directions worth exploring
+
+    The starting point is 20-day reversal. Ideas worth trying: combining
+    momentum and reversal over multiple horizons; price-volume relationships
+    (volume confirmation, price-volume divergence); volatility adjustment;
+    intraday shape (relative position of open/close/high/low); using vwap as a
+    measure of execution cost; conditional gating (flipping the signal direction
+    depending on the volatility or trend regime); non-linear transforms (tanh to
+    compress outliers, cross-sectional ranking).
+
+    Pay attention to **cross-sectional dispersion**: if the factor takes nearly
+    the same value for every stock on a given day, it cannot rank anything and
+    its IC is meaningless.
+
+# =============================================================================
+infrastructure:
+  llm:
+    provider: openai            # 兼容 OpenAI 协议的端点都用 openai
+    api_base: https://cn.huayanapi.com:27502/v1       # 例如 https://qianfan.baidubce.com/v2
+    model: gemini-3.7-flash           # 例如 deepseek-v3
+    api_key: sk-jV22vTR5cUw9LIbEf5CKM08w0i4LcVTmNw8KjwP2aEoEkE3K        # 例如 sk-...
+    temperature: 1.0
+    max_tokens: 16000
+    timeout: 3600
+
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  env:
+    type: local
+    # 首次运行要从 qlib 构建面板（~10s），之后走磁盘缓存（~0.1s）。
+    # 候选本身通常几秒。circle_packing 用的 30s 在这里不够。
+    timeout: 900
+
+  monitor:
+    enabled: false
+
+  langfuse:
+    enabled: false

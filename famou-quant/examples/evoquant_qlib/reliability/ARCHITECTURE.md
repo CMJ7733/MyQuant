@@ -164,6 +164,28 @@ FTEST --> REPORT
 | 7 | **Barrier 是两个 Archive 的唯一写入者** | `CommitGuard` 窗口外写入抛 `ArchiveWriteOutsideBarrier` |
 | 8 | 候选只拥有预测模型和训练配置 | `TaskSpec.protected_symbols` + F0 静态检查 |
 | 9 | final_test 一次性、单向 | `FinalTestService` 不持有任何可写存储；反射验证无组件接受 `PaperResult` |
+| 13 | 动作记录的是**实际执行的** expert/family | `_resolve_action` 写入 `resolved_*`，`ActionCodec` 按实际值编码，learned policy 被 mask 到可达集合 |
+
+### 动作空间的真实规模（实测）
+
+名义 2880（6×5×3×4×2×4），但多个头存在别名坍缩：
+
+| 头 | 名义 | 实际 | 原因 |
+|---|---|---|---|
+| expert | 6 | 1–2 | `crossover`/`debug`/`fusion` 无实现；`NNExpert.propose` 不读 kind |
+| family | 5 | 2–4 | `linear` 无 expert（退到 gbdt）；runtime `_FAMILIES` 里 `linear→_train_gbdt`、`temporal_transformer→_train_mlp` |
+| fidelity | 3 | 2 | F0 是静态检查，`_mask` 已置 -inf |
+| batch | 4 | 4 | 真实 |
+| promote | 2 | 2 | 真实 |
+| retrieval | 4 | 2（formula 模式 1）| `FormulaExpert` 不读 guidance 约束 |
+
+| 模式 | 名义 | 实际 |
+|---|---|---|
+| formula | 2880 | ~32 |
+| model | 2880 | ~64 |
+| mixed | 2880 | ~192 |
+
+不变量 13 让轨迹如实反映这一点：别名动作现在编码相同，训练不会再在不存在的区别上浪费容量。**但它没有新增能力** —— proposal 那一维（expert × family）在 mixed 下实际只有 2×4，这是论文主张里最薄的一条腿。
 
 **为什么 #7 最关键**：`AgentObservation` 完全由两个 Archive 构建 —— Archive 的内容**就是** Agent 眼中的世界。若 rollout 完成即写库，一个 batch 里第 2 个跑完就改变了下一次决策看到的状态，而该状态没有版本号、取决于 worker 调度顺序、离线 RL 重放时无法复现。单一事务写入者让"实时 archive"和"最后提交状态"重合，因此 `ObservationBuilder` 可以直接读，不存在会漂移的影子快照。
 
@@ -174,10 +196,12 @@ FTEST --> REPORT
 ```
 ① Evolver 取下一个迭代槽 → _plan_rollout_tasks
 ② Strategy.forward_batch()（控制线程）
-   ├─ ObservationBuilder 在【最后提交版本 n】构建观察
-   ├─ MetaPolicy → StructuredAction
-   ├─ DecisionRecord（含 36 维特征 / log_prob / value）→ TrajectoryStore
-   ├─ ProposalExpert × batch_size → CandidatePackage
+   ├─ 决策期检索：MemoryRetriever.retrieve(at_version=n, top_k=4)
+   ├─ ObservationBuilder 在【最后提交版本 n】构建观察（含检索摘要 6 维）
+   ├─ MetaPolicy → StructuredAction（含 retrieval_top_k）
+   ├─ DecisionRecord（特征 / log_prob / value / retrieval_bundle_ids）→ TrajectoryStore
+   ├─ 生成期检索：按 action.retrieval_top_k + model_family 过滤 → ExperienceGuidance
+   ├─ ProposalExpert × batch_size（受 guidance 约束）→ CandidatePackage
    └─ BatchAccumulator(expected=N) 开启
 ③ Evolver 并发派发 N 个 BackendTask（每个占一个迭代槽）
 ④ 各 worker 内：_ReliabilityEvaluate
@@ -189,11 +213,18 @@ FTEST --> REPORT
 ⑥ 最后一个到齐：
    ├─ PromotionPolicy（用整批证据判断）
    ├─ 若 request_gate → BudgetedGate → SealedGateService
-   └─ BarrierCommit：校验 → 单次原子写两个 Archive → version n+1 → Transition
-⑦ Transition → TrajectoryStore（reward 稍后由 RewardBuilder 回填）
-⑧ 若干轮后：build_dataset → BC → AWR → PolicyCheckpoint
-⑨ LearnedMetaPolicy 加载 checkpoint，回到 ②
+   └─ BarrierCommit：校验 → 单次原子写两个 Archive + Experience Index → version n+1 → Transition
+⑦ Transition → TrajectoryStore（reward 此时仍为 None）
+⑧ 搜索跑结束：Strategy.finalize_rewards() → RewardBuilder.mature_all()
+   ├─ 只回填本进程写入的 transition（session_transitions）
+   └─ incumbent 沿 transition 顺序前推，不用终态读数（避免 lookahead）
+⑨ build_dataset → BC →（reward 够多时）AWR → PolicyCheckpoint
+⑩ LearnedMetaPolicy 加载 checkpoint，回到 ②；iterate_policy.py 驱动 ②–⑨ 的多轮迭代
 ```
+
+**为什么 ⑧ 不放在 commit 里**：一个候选可能在若干决策之后才被升到 F2 并送 gate，
+它的 reward 属于当初生成它的那条 transition。commit 时刻还不知道结果，所以
+maturation 天然是跑结束后的一遍扫描，而不是提交路径的一部分。
 
 ---
 
@@ -218,6 +249,7 @@ FTEST --> REPORT
 | `rl/policy.py` | 202 | LearnedMetaPolicy |
 | `observation.py` | 172 | AgentObservation · ObservationBuilder |
 | `trajectory/` | 140 | Transition 构造 · TrajectoryStore |
+| `experience/` | 1,100 | ExperienceIndex · FailureMemory · MemoryRetriever · ExperienceConsolidator · ExperienceGuidance |
 | `reward.py` | 123 | RewardBuilder · RewardConfig |
 | `population.py` | 50 | CertifiedOnlyPopulation |
 
@@ -236,8 +268,9 @@ FTEST --> REPORT
 | `famou_candidate_runtime.py` | Alpha158 数据/训练运行时，visible 与 sealed 共用 |
 | `qlib_harness.py` | 子进程 run_fn 工厂 + sealed_eval_fn（含 incumbent 缓存） |
 | `baseline_lightgbm.py` | 官方 Alpha158 配置，certified 基线兼 gate 对照 |
-| `run_reliability_real.py` | 真实数据搜索循环 |
-| `train_policy.py` | BC → AWR 训练脚本 |
+| `run_reliability_real.py` | 真实数据搜索循环（`--policy` 挂载 checkpoint，`--trajectory` 指定输出） |
+| `iterate_policy.py` | 迭代式离线闭环驱动：搜索 → 回填 → 训练 → 换策略 → 下一轮 |
+| `train_policy.py` | BC → AWR 训练脚本（`--trajectory` 接受多个文件） |
 | `protocol_b/check_survivorship.py` | 幸存者偏差检验 |
 
 ---
@@ -283,7 +316,14 @@ VERDICT: point-in-time membership looks genuine
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| **Stage C 在线 RL** | 不做 | 需 10⁵ 量级 transition ≈ 71 天算力；且在线探索会烧 sealed 预算、污染论文口径。替代方案：迭代式离线（已支持） |
+| **Stage C 在线 RL** | 不做 | 需 10⁵ 量级 transition ≈ 71 天算力；且在线探索会烧 sealed 预算、污染论文口径。替代方案：迭代式离线（`iterate_policy.py`，已跑通） |
+| **经验 RAG 阶段 2-4** | 已落地 | 阶段 2 生成期检索 + `avoid_growth` 约束；阶段 3 检索摘要进 `AgentObservation`（6 维特征）；阶段 4 retrieval 头 + token 成本进 reward。`ENCODING_VERSION` → `enc_v3` |
+| **缺失的 expert 实现** | 待做 | `CrossoverExpert`（两父代杂交）、`DebugExpert`（读 `FailureKind` + `repair_hint` 修复，与 failure memory 天然配套）、`LinearExpert`。补齐后 proposal 维度才立得住；目前只是如实记录了坍缩 |
+| **FormulaExpert 不读 guidance** | 待做 | 接收但只记 provenance，`_mutate` 不看约束。公式模式下 retrieval 头对生成零影响（实测 0/20），策略唯一正确答案是恒选 0 |
+| **候选去重未启用** | 待做 | `SearchArchive.code_hash_exists` 已实现但生产代码零调用；别名动作会产生近重复候选，每个吃一次完整评估 |
+| **Semantic / Certified Pattern 记忆** | 待做 | 目前只有 failure memory。这两类需要 LLM 归纳与跨 episode 聚合，也是下面那条泄漏通道的来源 |
+| **Certified Pattern 的跨 episode 判决聚合** | 未防护 | 单次 gate 判决约 2 bit 有 per-episode 预算兜底，但跨 episode 聚合等于在学 gate 决策函数，而 gate 跨 episode 共享。`ExperienceRecord.episode_ids` 已留字段，随 Certified Pattern 一起加排除逻辑。failure memory 不读判决，通道当前关闭 |
+| **策略优于启发式的实证** | 待做 | 闭环已通，但当前轨迹量（10²）下 BC 只是克隆启发式、AWR 优势估计是噪声。需 ~10³ reward-labelled 样本才谈得上比较 |
 | **真并发实测** | 未验证 | deepcopy 共享语义有测试，未起过真多线程 |
 | **Ray 后端** | 不兼容 | 共享 ledger 在多进程下失效，需改 actor |
 | **多岛批量** | 有意退化 | 迭代槽跨岛轮转，batch 属单岛 context |

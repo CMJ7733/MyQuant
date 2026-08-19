@@ -35,7 +35,15 @@ from famou.reliability.types import ExpertKind, Fidelity, StructuredAction
 #: Stamped into every PolicyCheckpoint; a mismatch on load is an error.
 #: v2 added the "formula" family — the action space changed shape, so v1
 #: checkpoints cannot be reused.
-ENCODING_VERSION = "enc_v2"
+#: v3 added the experience layer: six retrieval features on the observation
+#: side and a sixth action head choosing how much experience to buy for the
+#: proposal phase. Both spaces changed shape, so v2 checkpoints and v2
+#: trajectories are not reusable either.
+#: v4 encodes the RESOLVED expert/family rather than the requested one. The
+#: head sizes are unchanged, which is exactly why the bump matters: a v3
+#: checkpoint would load without complaint and then be served labels that
+#: mean something different from the ones it was trained on.
+ENCODING_VERSION = "enc_v4"
 
 #: Action head vocabularies. Order is part of the encoding contract.
 EXPERTS: Tuple[str, ...] = tuple(e.value for e in ExpertKind)
@@ -43,6 +51,11 @@ FAMILIES: Tuple[str, ...] = ("formula", "gbdt", "linear", "mlp", "temporal_trans
 FIDELITIES: Tuple[int, ...] = (0, 1, 2)
 BATCH_BUCKETS: Tuple[int, ...] = (1, 2, 4, 8)
 PROMOTION: Tuple[bool, ...] = (False, True)
+#: How many experience records to inject into the proposal phase. 0 means
+#: "generate without consulting memory", which has to stay reachable: it is
+#: the control condition, and a policy that cannot decline retrieval cannot
+#: learn that retrieval has a cost.
+RETRIEVAL_BUCKETS: Tuple[int, ...] = (0, 2, 4, 8)
 
 #: Failure kinds that become observation features, in fixed order.
 TRACKED_FAILURES: Tuple[FailureKind, ...] = (
@@ -126,6 +139,17 @@ class ObservationEncoder:
         "state_version_norm",
         "in_flight_norm",
         "frac_candidates_certified",
+        # --- retrieved experience (stage 3) ----------------------------
+        # Summary only: how much memory there is, how strong it is, and what
+        # kind. The statements go to the proposal side, not here — a policy
+        # over ~40 features cannot consume prose, and letting the observation
+        # grow with the index would break the fixed-width contract.
+        "retrieval_available_norm",
+        "retrieval_n_norm",
+        "retrieval_max_reliability",
+        "retrieval_frac_repairable",
+        "retrieval_frac_policy_level",
+        "retrieval_ran",
     ) + tuple(f"fail_{k.value}" for k in TRACKED_FAILURES)
 
     def __init__(
@@ -207,6 +231,26 @@ class ObservationEncoder:
             (n_cert / n_cand) if n_cand > 0 else 0.0,
         ]
 
+        # Retrieval summary. A None summary encodes as zeros, which is
+        # deliberately the same as "ran and found nothing" EXCEPT for the
+        # retrieval_ran flag — without that flag the policy could not tell a
+        # disabled memory layer from an empty one, and would learn from runs
+        # where retrieval was off as if memory had simply been useless.
+        retrieved = obs.retrieved_experience
+        if retrieved is None:
+            vec.extend([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        else:
+            n_ret = max(0, int(retrieved.n_retrieved))
+            denom = float(n_ret) if n_ret else 1.0
+            vec.extend([
+                min(1.0, retrieved.n_available / 20.0),
+                min(1.0, n_ret / 8.0),
+                max(0.0, min(1.0, float(retrieved.max_reliability))),
+                min(1.0, retrieved.n_repairable / denom),
+                min(1.0, retrieved.n_policy_level / denom),
+                1.0,
+            ])
+
         failures = obs.recent_failure_patterns or {}
         total_failures = max(1.0, float(sum(failures.values())))
         vec.extend(failures.get(kind.value, 0) / total_failures for kind in TRACKED_FAILURES)
@@ -222,16 +266,27 @@ class ObservationEncoder:
 class ActionCodec:
     """StructuredAction <-> factored discrete action.
 
-    Heads: expert, model_family, fidelity, batch bucket, promotion flag.
+    Heads: expert, model_family, fidelity, batch bucket, promotion flag, and
+    (v3) how much experience to buy for the proposal phase.
+
+    The retrieval head deliberately governs the PROPOSAL-phase retrieval, not
+    the one that produced this observation. Making it govern its own input
+    would be circular — the policy would have to decide how much to retrieve
+    before seeing anything. Instead the decision-phase retrieval is a small
+    fixed cost that always runs, and the head chooses how much context to
+    spend on generation, where the cost is real and the benefit is
+    attributable through the same delayed reward as everything else.
     """
 
     version = ENCODING_VERSION
-    HEADS: Tuple[str, ...] = ("expert", "family", "fidelity", "batch", "promote")
+    HEADS: Tuple[str, ...] = (
+        "expert", "family", "fidelity", "batch", "promote", "retrieval",
+    )
 
     @property
     def head_sizes(self) -> Tuple[int, ...]:
         return (len(EXPERTS), len(FAMILIES), len(FIDELITIES),
-                len(BATCH_BUCKETS), len(PROMOTION))
+                len(BATCH_BUCKETS), len(PROMOTION), len(RETRIEVAL_BUCKETS))
 
     # ------------------------------------------------------------------
 
@@ -243,6 +298,14 @@ class ActionCodec:
             return default
 
     def encode(self, action: StructuredAction) -> Tuple[int, ...]:
+        """Action -> head indices, using what RAN rather than what was asked.
+
+        ``effective_expert`` / ``effective_family`` fall back to the requested
+        values when nothing was substituted, so this is a no-op for actions the
+        registry could serve directly. When a substitution did happen, encoding
+        the request would put two labels on one behaviour and the policy would
+        spend capacity separating them.
+        """
         batch = int(action.batch_size)
         # Round DOWN to a bucket: a policy asked for 3 rollouts should be
         # recorded as the 2-bucket it can actually be served, not the 4 it
@@ -251,12 +314,17 @@ class ActionCodec:
         for i, b in enumerate(BATCH_BUCKETS):
             if batch >= b:
                 bucket = i
+        retrieval_bucket = 0
+        for i, r in enumerate(RETRIEVAL_BUCKETS):
+            if int(action.retrieval_top_k) >= r:
+                retrieval_bucket = i
         return (
-            self._index(EXPERTS, action.expert.value),
-            self._index(FAMILIES, action.model_family),
+            self._index(EXPERTS, action.effective_expert),
+            self._index(FAMILIES, action.effective_family),
             self._index(FIDELITIES, int(action.fidelity.value), default=1),
             bucket,
             1 if action.promotion_requested else 0,
+            retrieval_bucket,
         )
 
     def decode(
@@ -268,7 +336,7 @@ class ActionCodec:
         promotion_target_id: Optional[str] = None,
         rationale: str = "",
     ) -> StructuredAction:
-        e, f, fid, b, p = (int(i) for i in indices)
+        e, f, fid, b, p, r = (int(i) for i in indices)
         fidelity = Fidelity(FIDELITIES[min(fid, len(FIDELITIES) - 1)])
         # Seeds are not a learned head: multi-seed evidence is what the
         # promotion policy needs, so the count follows the fidelity rather than
@@ -283,5 +351,6 @@ class ActionCodec:
             batch_size=BATCH_BUCKETS[min(b, len(BATCH_BUCKETS) - 1)],
             promotion_requested=bool(PROMOTION[min(p, 1)]),
             promotion_target_id=promotion_target_id,
+            retrieval_top_k=RETRIEVAL_BUCKETS[min(r, len(RETRIEVAL_BUCKETS) - 1)],
             rationale=rationale,
         )

@@ -55,6 +55,13 @@ test = [
     "pytest",
     "mock"
 ]
+# 实时监控面板 (python -m famou.monitor) 相关依赖
+# httpx 用于 --api-base 的运行控制转发，也是 fastapi TestClient 的依赖
+monitor = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "httpx>=0.27"
+]
 
 # 项目相关 URL 配置
 [project.urls]
@@ -76,7 +83,8 @@ packages = ["famou"]
 # 支持通配符模式
 include = [
     "famou/conf/*",
-    "famou/data/*"
+    "famou/data/*",
+    "famou/monitor/static/*"
 ]
 
 # wheel 包构建配置

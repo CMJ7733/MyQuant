@@ -143,6 +143,7 @@ class BatchAccumulator:
             total.llm_tokens += o.cost.llm_tokens
             total.visible_query_count += o.cost.visible_query_count
             total.sealed_query_count += o.cost.sealed_query_count
+            total.retrieval_tokens += o.cost.retrieval_tokens
         return total
 
 
@@ -164,6 +165,7 @@ class BarrierCommit:
         trajectory_store: TrajectoryStore,
         state_store: StateStore,
         guard: CommitGuard,
+        consolidator: Optional[Any] = None,
         logger: Optional[Any] = None,
     ):
         self._search = search_archive
@@ -172,6 +174,7 @@ class BarrierCommit:
         self._trajectory = trajectory_store
         self._store = state_store
         self._guard = guard
+        self._consolidator = consolidator
         self.logger = logger
         self._commit_lock = threading.Lock()
         if self._store.get(*_STATE_VERSION_PATH, default=None) is None:
@@ -253,20 +256,60 @@ class BarrierCommit:
                 next_version = current + 1
                 self._store.set(*_STATE_VERSION_PATH, value=next_version)
 
-            batch.committed = True
+                transition = build_transition(
+                    decision=batch.decision,
+                    candidate_ids=candidate_ids,
+                    evidence_ids=evidence_refs,
+                    costs=batch.total_cost(),
+                    gate_verdict=verdict,
+                    done=done,
+                    next_state_version=next_version,
+                    stale=stale,
+                )
 
-            transition = build_transition(
-                decision=batch.decision,
-                candidate_ids=candidate_ids,
-                evidence_ids=evidence_refs,
-                costs=batch.total_cost(),
-                gate_verdict=verdict,
-                done=done,
-                next_state_version=next_version,
-                stale=stale,
-            )
+                # Experience is indexed inside the same window, so a record
+                # can never become retrievable at a version the archives have
+                # not reached (experience invariant E2). It is written with
+                # valid_from = next_version: the batch's lessons appear only
+                # once its results do.
+                self._consolidate(batch, transition, next_version)
+
+            batch.committed = True
             self._trajectory.record_transition(transition)
             return transition
+
+    # ------------------------------------------------------------------
+
+    def _consolidate(self, batch: BatchAccumulator, transition, next_version: int) -> None:
+        """Fold the committed batch into the experience index, if one is wired."""
+        if self._consolidator is None:
+            return
+        from famou.reliability.experience import ObservedOutcome
+
+        observed = [
+            ObservedOutcome(
+                candidate_id=o.candidate_id,
+                episode_id=o.episode_id,
+                model_family=o.model_family,
+                evidence=list(o.evidence),
+                parent_ids=list(o.lineage.parent_ids) if o.lineage else [],
+                expert=(o.lineage.expert if o.lineage and o.lineage.expert
+                        else str(o.meta.get("expert", "unknown"))),
+            )
+            for o in batch.outcomes
+        ]
+        try:
+            self._consolidator.consolidate(
+                observed,
+                valid_from_state_version=next_version,
+                transition_id=transition.transition_id,
+                decision_id=batch.decision.decision_id,
+                policy_version=batch.decision.policy_version,
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            # Never let a memory-layer fault destroy a committed batch.
+            if self.logger:
+                self.logger.warning(f"[Experience] consolidation skipped: {e}")
 
     # ------------------------------------------------------------------
 

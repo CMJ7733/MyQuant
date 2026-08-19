@@ -207,6 +207,57 @@ class TestExperts:
             != GBDTExpert.extract_hyperparams(parent)
         )
 
+    def test_expert_does_not_inherit_a_foreign_familys_hyperparams(self):
+        """A learned policy has an independent family head, so it will ask the
+        GBDT expert to mutate an MLP parent (and vice versa). The expert must
+        fall back to its own defaults instead of reading keys that family
+        never had — that used to raise KeyError inside _mutate."""
+        mlp_parent = NNExpert(ExpertKind.EXPLORE, rng_seed=1, family="mlp").propose(
+            StructuredAction(expert=ExpertKind.EXPLORE, model_family="mlp"),
+            [],
+            iteration=1,
+        )
+        child = GBDTExpert(ExpertKind.MUTATE, rng_seed=2).propose(
+            StructuredAction(expert=ExpertKind.MUTATE, model_family="gbdt"),
+            [mlp_parent],
+            iteration=2,
+        )
+
+        assert child.meta["model_family"] == "gbdt"
+        assert child.parent_id == mlp_parent.id      # lineage is still recorded
+        params = GBDTExpert.extract_hyperparams(child)
+        assert "num_leaves" in params and "dropout" not in params
+        assert StaticChecker().check(child).passed
+
+        # ...and the reverse direction.
+        nn_child = NNExpert(ExpertKind.MUTATE, rng_seed=3, family="mlp").propose(
+            StructuredAction(expert=ExpertKind.MUTATE, model_family="mlp"),
+            [child],
+            iteration=3,
+        )
+        assert "dropout" in NNExpert.extract_hyperparams(nn_child)
+
+    def test_same_family_parent_with_partial_hyperparams_is_completed(self):
+        """A hand-written baseline may declare only some keys; _mutate needs
+        the full set, so what the parent provides is merged over the defaults
+        rather than replacing them."""
+        partial = Program(
+            id="hand_written",
+            code="HYPERPARAMS = {'num_leaves': 64}\n",
+            generation=0,
+            iteration=0,
+        )
+        partial.meta["model_family"] = "gbdt"
+
+        child = GBDTExpert(ExpertKind.MUTATE, rng_seed=4).propose(
+            StructuredAction(expert=ExpertKind.MUTATE, model_family="gbdt"),
+            [partial],
+            iteration=1,
+        )
+
+        params = GBDTExpert.extract_hyperparams(child)
+        assert {"learning_rate", "num_leaves", "max_depth"} <= set(params)
+
     def test_nn_expert_produces_valid_candidate(self):
         expert = NNExpert(ExpertKind.EXPLORE, rng_seed=0, family="mlp")
         action = StructuredAction(expert=ExpertKind.EXPLORE, model_family="mlp")

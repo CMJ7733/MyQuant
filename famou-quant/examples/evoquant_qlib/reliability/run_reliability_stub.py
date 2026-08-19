@@ -15,6 +15,7 @@ What it demonstrates:
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -46,6 +47,31 @@ def stub_visible_run_fn(code: str, split_cfg: dict) -> dict:
     }
 
 
+def make_flaky_run_fn(failure_rate: float):
+    """Stub harness that fails deterministically every 1/failure_rate calls.
+
+    Without failures the experience layer has nothing to index, so the
+    retrieval head sees only ``top_k=0`` and looks perfectly learned while
+    actually being degenerate. A smoke test that never fails cannot exercise
+    the memory path at all.
+
+    Deterministic rather than random: the runs have to be reproducible, and
+    Python's global RNG is also what drives the experts.
+    """
+    if failure_rate <= 0:
+        return stub_visible_run_fn
+    period = max(2, int(round(1.0 / failure_rate)))
+    state = {"n": 0}
+
+    def run_fn(code: str, split_cfg: dict) -> dict:
+        state["n"] += 1
+        if state["n"] % period != 0:
+            raise RuntimeError("RuntimeError: CUDA out of memory")
+        return stub_visible_run_fn(code, split_cfg)
+
+    return run_fn
+
+
 def stub_sealed_fn(code: str, manifest, seeds) -> dict:
     """Stub sealed harness. On the cluster this is the ONLY place sealed
     data is loaded; it must live in a separate process/service."""
@@ -57,13 +83,40 @@ def stub_sealed_fn(code: str, manifest, seeds) -> dict:
 
 
 def main() -> None:
-    manifest = FrozenSplitManifest.from_yaml(str(SPLITS), "E1")
+    # Same flags as run_reliability_real.py, so iterate_policy.py can drive
+    # this runner to smoke-test the whole loop in seconds before an overnight
+    # job commits real compute to it.
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--steps", type=int, default=6)
+    ap.add_argument("--max-batch", type=int, default=4)
+    ap.add_argument("--sealed-limit", type=int, default=5)
+    ap.add_argument(
+        "--policy", default=None,
+        help="LearnedMetaPolicy checkpoint (.pt); omit to use HeuristicMetaPolicy",
+    )
+    ap.add_argument(
+        "--trajectory", default=None,
+        help="trajectory JSONL path (default: reliability_trajectory.jsonl)",
+    )
+    ap.add_argument(
+        "--failure-rate", type=float, default=0.5,
+        help="fraction of stub evaluations that fail (default 0.5). Non-zero "
+             "by default so the experience/retrieval path is actually "
+             "exercised; use 0 for the original always-succeeds harness",
+    )
+    # Accepted and ignored: keeps the CLI interchangeable with the real runner.
+    ap.add_argument("--episode", default="E1")
+    ap.add_argument("--mode", default="model")
+    ap.add_argument("--provider-uri", default=None)
+    args = ap.parse_args()
+
+    manifest = FrozenSplitManifest.from_yaml(str(SPLITS), args.episode)
     print(f"[setup] manifest={manifest.protocol_version}/{manifest.episode_id} "
           f"hash={manifest.compute_hash()[:12]}")
 
     state_store = StateStore()
     ledger = BudgetLedger(state_store)
-    ledger.configure_episode(manifest.episode_id, sealed_limit=5)
+    ledger.configure_episode(manifest.episode_id, sealed_limit=args.sealed_limit)
     ledger.set_global_limit("visible_queries", 500)
 
     # Certified baseline (hand-crafted LightGBM Alpha158 reference)
@@ -98,9 +151,22 @@ def main() -> None:
         )
     )
 
-    evaluator = FidelityEvaluator(manifest, stub_visible_run_fn, ledger)
+    evaluator = FidelityEvaluator(
+        manifest, make_flaky_run_fn(args.failure_rate), ledger
+    )
     gate = BudgetedGate(SealedGateService(manifest, stub_sealed_fn), ledger)
-    trajectory = TrajectoryStore(str(HERE / "reliability_trajectory.jsonl"))
+    trajectory = TrajectoryStore(
+        args.trajectory or str(HERE / "reliability_trajectory.jsonl")
+    )
+
+    meta_policy = None
+    if args.policy:
+        from famou.reliability.rl.policy import LearnedMetaPolicy
+
+        meta_policy = LearnedMetaPolicy(args.policy)
+        print(f"[setup] policy={meta_policy.policy_version} <- {args.policy}")
+    else:
+        print("[setup] policy=heuristic_v0 (no --policy given)")
 
     strategy = ReliabilityAwareQuantStrategy(
         manifest=manifest,
@@ -109,6 +175,8 @@ def main() -> None:
         state_store=state_store,
         trajectory_store=trajectory,
         gate=gate,
+        meta_policy=meta_policy,
+        sealed_query_limit=args.sealed_limit,
     )
 
     baseline = Program(id="init_0", code=baseline_code, generation=0, iteration=0)
@@ -120,7 +188,7 @@ def main() -> None:
     population = [baseline]
     archive = {"init_0": baseline}
 
-    for step in range(6):
+    for step in range(args.steps):
         ctx = Context(
             experiment_id="exp_reliability_stub",
             task_description="EvoQuant reliability stub run",
@@ -137,7 +205,7 @@ def main() -> None:
         # forward_batch decides and generates; the evaluation happens in the
         # rollout modules (that is what the Evolver runs concurrently), and the
         # batch commits only once every member has reported back.
-        batch = strategy.forward_batch(ctx, [], max_batch_size=4)
+        batch = strategy.forward_batch(ctx, [], max_batch_size=args.max_batch)
         results = []
         for i, rollout in enumerate(batch.rollouts):
             result = RolloutResult(rollout_id=f"stub_{step}_{i}", iteration=step + 1)
@@ -167,6 +235,8 @@ def main() -> None:
             f" target={target}{gate_info}"
         )
 
+    n_rewarded = strategy.finalize_rewards()
+
     print("\n=== Certified Archive ===")
     for cid, m in certified.members().items():
         print(f"  {cid}: family={m['model_family']} admission={m['admission']}")
@@ -178,10 +248,13 @@ def main() -> None:
     # The store is append-only JSONL and reloads what earlier runs wrote, so
     # these counts accumulate across invocations. That is the point — it is
     # the RL trainer's corpus — but delete reliability_trajectory.jsonl if you
-    # want a clean demo.
+    # want a clean demo. Reward maturation is scoped to THIS run's transitions
+    # (see RewardBuilder.mature_all), so replayed ones keep their old values.
+    rewards = [t.reward for t in trajectory.transitions() if t.reward is not None]
     print(f"\n=== Trajectory (cumulative across runs): "
           f"{len(trajectory.transitions())} transitions, "
-          f"{len(trajectory.decisions())} decisions ===")
+          f"{len(trajectory.decisions())} decisions, "
+          f"{len(rewards)} rewarded ({n_rewarded} this run) ===")
 
 
 if __name__ == "__main__":

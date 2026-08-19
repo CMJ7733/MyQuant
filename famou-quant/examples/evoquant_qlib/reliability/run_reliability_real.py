@@ -77,6 +77,14 @@ def main() -> None:
     ap.add_argument("--sealed-limit", type=int, default=3)
     ap.add_argument("--max-batch", type=int, default=2)
     ap.add_argument("--timeout", type=float, default=1800.0)
+    ap.add_argument(
+        "--policy", default=None,
+        help="LearnedMetaPolicy checkpoint (.pt); omit to use HeuristicMetaPolicy",
+    )
+    ap.add_argument(
+        "--trajectory", default=None,
+        help="trajectory JSONL path (default: real_trajectory_<episode>_<mode>.jsonl)",
+    )
     args = ap.parse_args()
 
     mode = CandidateMode(args.mode)
@@ -110,7 +118,22 @@ def main() -> None:
     gate = BudgetedGate(SealedGateService(manifest, sealed_fn), ledger)
 
     trajectory = TrajectoryStore(
-        str(HERE / f"real_trajectory_{args.episode}_{mode.value}.jsonl"))
+        args.trajectory
+        or str(HERE / f"real_trajectory_{args.episode}_{mode.value}.jsonl")
+    )
+
+    # A trained checkpoint drops straight into the meta_policy slot. Without
+    # one the run uses HeuristicMetaPolicy, which is also what generates the
+    # first round's behaviour-cloning corpus.
+    meta_policy = None
+    if args.policy:
+        from famou.reliability.rl.policy import LearnedMetaPolicy
+
+        meta_policy = LearnedMetaPolicy(args.policy)
+        print(f"[setup] policy={meta_policy.policy_version} <- {args.policy}")
+    else:
+        print("[setup] policy=heuristic_v0 (no --policy given)")
+
     strategy = ReliabilityAwareQuantStrategy(
         manifest=manifest,
         fidelity_evaluator=evaluator,
@@ -119,6 +142,7 @@ def main() -> None:
         state_store=state_store,
         trajectory_store=trajectory,
         gate=gate,
+        meta_policy=meta_policy,
         sealed_query_limit=args.sealed_limit,
     )
 
@@ -213,6 +237,12 @@ def main() -> None:
               f"v={t.next_state_version} rank_ic=[{', '.join(scores)}]"
               f" target={a.promotion_target_id or '-'}{gate_txt}")
 
+    # Delayed rewards can only be computed once the run's long-horizon outcomes
+    # exist (a candidate gated three decisions after it was generated still
+    # belongs to the transition that generated it). Without this pass every
+    # transition stays reward=None and only stage A (BC) can train.
+    n_rewarded = strategy.finalize_rewards()
+
     print(f"\n=== Certified Archive ({time.time()-started:.0f}s total) ===")
     for cid, m in CertifiedArchive(state_store).members().items():
         print(f"  {cid}: {m['model_family']} via {m['admission']}")
@@ -220,9 +250,14 @@ def main() -> None:
     for k, v in ledger.remaining(episode_id=manifest.episode_id).items():
         print(f"  {k}: {v}")
     search = SearchArchive(state_store)
+    rewards = [t.reward for t in trajectory.transitions() if t.reward is not None]
     print(f"\n=== {len(search.all_candidates())} candidates, "
-          f"{len(trajectory.transitions())} transitions, "
+          f"{len(trajectory.transitions())} transitions "
+          f"({len(rewards)} rewarded, {n_rewarded} this run), "
           f"state_version={strategy._barrier.state_version} ===")
+    if rewards:
+        print(f"    reward mean={sum(rewards)/len(rewards):+.4f} "
+              f"min={min(rewards):+.4f} max={max(rewards):+.4f}")
 
 
 if __name__ == "__main__":

@@ -367,6 +367,15 @@ class EvaluationCost(BaseModel):
     llm_tokens: int = 0
     visible_query_count: int = 0
     sealed_query_count: int = 0
+    retrieval_tokens: int = Field(
+        default=0,
+        description=(
+            "Context spent on retrieved experience (stage 4). Tracked apart "
+            "from llm_tokens because it is the term the retrieval head is "
+            "charged for: a policy that pays nothing for context will always "
+            "ask for the maximum."
+        ),
+    )
 
 
 # =============================================================================
@@ -656,7 +665,56 @@ class StructuredAction(BaseModel):
             "spins in place."
         ),
     )
+    retrieval_top_k: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "How many experience records to inject into the PROPOSAL phase "
+            "(stage 4). 0 means generate without consulting memory, and must "
+            "stay reachable: it is the control condition, and a policy that "
+            "cannot decline retrieval cannot learn that context costs "
+            "anything. Does not affect the decision-phase retrieval, which is "
+            "a small fixed cost — see ActionCodec for why that split avoids a "
+            "circular dependency."
+        ),
+    )
+    resolved_expert: Optional[str] = Field(
+        default=None,
+        description=(
+            "The ExpertKind that ACTUALLY served this action, when it differs "
+            "from ``expert``. Not every kind has an implementation, and the "
+            "registry lookup silently substitutes one that does — so a "
+            "decision recorded as 'crossover' may have run a mutation. "
+            "Training encodes this field when set (see ActionCodec), because "
+            "labelling identical behaviour with different action ids teaches "
+            "the policy a distinction that does not exist."
+        ),
+    )
+    resolved_family: Optional[str] = Field(
+        default=None,
+        description=(
+            "The model family that actually served this action. Same problem: "
+            "a family with no registered expert falls back to another one, so "
+            "the candidate is not from the family the decision names."
+        ),
+    )
     rationale: str = ""
+
+    @property
+    def effective_expert(self) -> str:
+        """What ran, falling back to what was asked."""
+        return self.resolved_expert or self.expert.value
+
+    @property
+    def effective_family(self) -> str:
+        return self.resolved_family or self.model_family
+
+    @property
+    def was_substituted(self) -> bool:
+        return bool(
+            (self.resolved_expert and self.resolved_expert != self.expert.value)
+            or (self.resolved_family and self.resolved_family != self.model_family)
+        )
 
     model_config = ConfigDict(use_enum_values=False)
 
@@ -690,6 +748,16 @@ class DecisionRecord(BaseModel):
         description="None for heuristic policies; set once an RL policy is live",
     )
     predicted_value: Optional[float] = None
+    retrieval_bundle_ids: List[str] = Field(
+        default_factory=list,
+        description=(
+            "RetrievalBundles consulted for this decision. Additive and "
+            "optional: it records what experience was available, not what the "
+            "policy consumed, so it does NOT change the observation encoding "
+            "and existing checkpoints stay valid. The bundles themselves live "
+            "in the TrajectoryStore under kind='retrieval'."
+        ),
+    )
     timestamp: float
 
     model_config = ConfigDict(use_enum_values=False)

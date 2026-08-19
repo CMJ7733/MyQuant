@@ -366,6 +366,11 @@ famou_v2/
 │   │   └── embedding/           # 嵌入服务
 │   ├── prompts/
 │   │   └── templates/           # Jinja2 提示词模板
+│   ├── monitor/
+│   │   ├── reader.py            # 运行目录 → 快照（增量、只读）
+│   │   ├── server.py            # HTTP + SSE 服务
+│   │   ├── control.py           # 转发到 api_server 的运行控制（可选）
+│   │   └── static/index.html    # 单文件面板
 │   └── config/
 │       └── settings.py          # 配置模型
 ├── examples/
@@ -394,6 +399,42 @@ famou_data/
 - **Populations** 和 **RolloutResults** 仅存储 Program ID
 - 加载时通过 ID 在 Archive 中查找重建
 - 存储空间减少 10-100 倍（50 程序 × 3 岛屿：145MB → 1.5MB）
+
+## 实时监控面板
+
+演化跑起来之后，`python -m famou.monitor` 会把上面这个目录渲染成一个网页，用 SSE 每秒推送一帧快照：
+运行总览、岛屿层级、质量漏斗、最优分数轨迹、LLM 成本、近期 Rollout、Top 程序，点任意一行可以查看
+程序代码、评估指标、产生它的完整 LLM 交互和血缘链。
+
+```bash
+pip install -e ".[monitor]"
+
+# 跟随 famou_data/ 下最近一次实验
+python -m famou.monitor --run famou_data/ --port 8080 --open
+
+# 跟随指定实验
+python -m famou.monitor --run famou_data/circle_packing_evolution_abc123
+```
+
+面板**只读取运行目录里的产出文件，从不 import 演化框架**。因此它对演化本身零开销、零风险：面板崩了
+不会影响正在跑的实验，反之亦然；可以随时接入和断开；实验跑完之后用同一套界面复盘。
+
+默认绑定 `127.0.0.1`。这是安全决定而不是习惯：`/api/program/{id}` 会逐字返回每个程序的 system prompt、
+prompt 和 response，绑到 `0.0.0.0` 等于把整套提示词工程发布到网络上，所以需要显式传 `--host` 并会打印警告。
+
+### 运行控制（可选）
+
+传入 `--api-base` 之后，面板会多出「开始 / 暂停 / 继续 / 停止 / 取消」按钮，转发给正在运行的
+`api_server`（见 `api_server/fm_api.py`，默认 8090 端口）。不传则面板是严格只读的，也不需要
+`api_server` 在跑。
+
+```bash
+python -m famou.monitor --run famou_data/ \
+    --api-base http://127.0.0.1:8090 --job-id <job_id> --worker-id <worker_id>
+```
+
+> 这个面板展示的是**演化过程中**的状态。跑完之后由 LLM 生成的复盘报告（背景与目标 / 演进过程分析 /
+> 最优解分析）是另一套东西，见 `api_server/report.py` 和 `api_server/dashboard.html`，两者并存、互不干扰。
 
 ## 扩展指南
 

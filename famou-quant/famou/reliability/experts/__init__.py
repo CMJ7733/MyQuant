@@ -265,6 +265,37 @@ def _render_template(family: str, expert: str, hyperparams: Dict[str, Any]) -> s
 # =============================================================================
 
 
+def _avoid_growth(guidance: Optional[Any]) -> bool:
+    """Read the one constraint the deterministic experts honour (stage 2).
+
+    Duck-typed rather than imported: keeping the experts free of a dependency
+    on the experience layer is what lets guidance stay optional.
+    """
+    return bool(getattr(guidance, "avoid_growth", False))
+
+
+def _stamp_guidance(program: Program, guidance: Optional[Any]) -> None:
+    """Record which experience shaped this candidate.
+
+    Provenance, not decoration: without it there is no way to ask afterwards
+    whether guided candidates fared better than unguided ones, which is the
+    whole point of collecting RetrievalBundles.
+    """
+    if guidance is None:
+        return
+    ids = getattr(guidance, "experience_ids", None)
+    experience_ids = ids() if callable(ids) else []
+    if not experience_ids:
+        return
+    program.meta["guided_by"] = experience_ids
+    bundle_id = getattr(guidance, "bundle_id", None)
+    if bundle_id:
+        program.meta["retrieval_bundle_id"] = bundle_id
+    constraints = getattr(guidance, "constraints", None)
+    if constraints:
+        program.meta["guidance_constraints"] = dict(constraints)
+
+
 class ProposalExpert:
     """Base class for action -> candidate translation."""
 
@@ -277,7 +308,17 @@ class ProposalExpert:
         parents: List[Program],
         *,
         iteration: int,
+        guidance: Optional[Any] = None,
     ) -> Program:
+        """Turn an action into a candidate.
+
+        ``guidance`` is an optional ``ExperienceGuidance`` (stage 2). It is
+        typed loosely to keep this package free of an import from the
+        experience layer — the dependency runs experience -> experts only
+        through the strategy, never back. Experts that ignore it behave
+        exactly as before, which is what keeps guidance an opt-in influence
+        rather than a silent change to every proposal.
+        """
         raise NotImplementedError
 
     # -- packaging ------------------------------------------------------
@@ -393,6 +434,41 @@ class ProposalExpert:
                             )
         raise ValueError(f"No HYPERPARAMS assignment found in {program.id}")
 
+    def inherit_hyperparams(
+        self, parents: List[Program], defaults: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Starting hyperparameters for a proposal, or None if there is no
+        usable same-family parent to inherit from.
+
+        HYPERPARAMS are family-specific: ``num_leaves`` means nothing to an MLP
+        and ``dropout`` nothing to a GBDT. ``HeuristicMetaPolicy`` never crosses
+        families — it reads ``model_family`` off the parent it selected — but
+        ``LearnedMetaPolicy`` has an independent family head and will ask the
+        GBDT expert to mutate an MLP parent. Inheriting there used to raise
+        KeyError from inside ``_mutate``; starting from this family's defaults
+        is what "propose a gbdt from here" can honestly mean.
+
+        A same-family parent may also carry only a partial dict (a hand-written
+        baseline, an LLM-authored candidate), so what it does provide is merged
+        over the defaults rather than replacing them — every ``_mutate``
+        expects its full key set.
+        """
+        if not parents:
+            return None
+        parent = parents[0]
+        parent_family = (parent.meta or {}).get("model_family")
+        if parent_family is not None and parent_family != self.model_family:
+            return None
+        try:
+            inherited = self.extract_hyperparams(parent)
+        except (ValueError, SyntaxError, TypeError):
+            return None
+        if not isinstance(inherited, dict):
+            return None
+        merged = dict(defaults)
+        merged.update(inherited)
+        return merged
+
 
 # =============================================================================
 # GBDT expert (deterministic, no LLM)
@@ -457,21 +533,22 @@ class GBDTExpert(ProposalExpert):
         parents: List[Program],
         *,
         iteration: int,
+        guidance: Optional[Any] = None,
     ) -> Program:
-        base = DEFAULT_GBDT
-        if parents:
-            try:
-                base = self.extract_hyperparams(parents[0])
-            except (ValueError, SyntaxError):
-                base = dict(DEFAULT_GBDT)
-
-        params = dict(base)
+        base = self.inherit_hyperparams(parents, DEFAULT_GBDT)
+        params = dict(DEFAULT_GBDT) if base is None else base
         if self.kind in (ExpertKind.MUTATE, ExpertKind.LOCAL_HPO, ExpertKind.EXPLORE):
-            params = self._mutate(params)
+            params = self._mutate(params, avoid_growth=_avoid_growth(guidance))
         code = _render_template(self.model_family, self.kind.value, params)
-        return self._new_program(code, action=action, parents=parents, iteration=iteration)
+        program = self._new_program(
+            code, action=action, parents=parents, iteration=iteration
+        )
+        _stamp_guidance(program, guidance)
+        return program
 
-    def _mutate(self, p: Dict[str, Any]) -> Dict[str, Any]:
+    def _mutate(
+        self, p: Dict[str, Any], *, avoid_growth: bool = False
+    ) -> Dict[str, Any]:
         import math
 
         rng = self._rng
@@ -487,6 +564,14 @@ class GBDTExpert(ProposalExpert):
         out["lambda_l1"] = min(800.0, max(20.0, lognormal(float(p["lambda_l1"]), 0.30)))
         out["lambda_l2"] = min(2000.0, max(50.0, lognormal(float(p["lambda_l2"]), 0.30)))
         out["min_data_in_leaf"] = int(min(200, max(5, lognormal(float(p["min_data_in_leaf"]), 0.4))))
+
+        if avoid_growth:
+            # This family has repeatedly hit OOM/timeout at this scale. Cap the
+            # capacity knobs at the parent's values rather than resampling them
+            # smaller: the goal is to stop climbing, not to force a shrink the
+            # evidence does not call for.
+            out["num_leaves"] = min(out["num_leaves"], int(p["num_leaves"]))
+            out["max_depth"] = min(out["max_depth"], int(p["max_depth"]))
         return out
 
 
@@ -557,6 +642,7 @@ class NNExpert(ProposalExpert):
         parents: List[Program],
         *,
         iteration: int,
+        guidance: Optional[Any] = None,
     ) -> Program:
         if self._llm_edit_fn is not None and parents:
             code = self._llm_edit_fn(parents[0].code, action)
@@ -564,37 +650,50 @@ class NNExpert(ProposalExpert):
                 code, action=action, parents=parents, iteration=iteration
             )
             program.meta["llm_guided"] = True
+            _stamp_guidance(program, guidance)
             return program
 
-        base = DEFAULT_MLP
-        if parents:
-            try:
-                base = self.extract_hyperparams(parents[0])
-            except (ValueError, SyntaxError):
-                base = dict(DEFAULT_MLP)
-        params = self._mutate(base)
+        base = self.inherit_hyperparams(parents, DEFAULT_MLP)
+        params = self._mutate(
+            dict(DEFAULT_MLP) if base is None else base,
+            avoid_growth=_avoid_growth(guidance),
+        )
         code = _render_template(self.model_family, self.kind.value, params)
-        return self._new_program(code, action=action, parents=parents, iteration=iteration)
+        program = self._new_program(
+            code, action=action, parents=parents, iteration=iteration
+        )
+        _stamp_guidance(program, guidance)
+        return program
 
-    def _mutate(self, p: Dict[str, Any]) -> Dict[str, Any]:
+    def _mutate(
+        self, p: Dict[str, Any], *, avoid_growth: bool = False
+    ) -> Dict[str, Any]:
         rng = self._rng
         out = dict(p)
         dims = list(out.get("hidden_dims", [256, 128]))
         # Randomly grow/shrink/shift one layer
-        op = rng.choice(["grow", "shrink", "rescale", "toggle_ln"])
+        choices = ["grow", "shrink", "rescale", "toggle_ln"]
+        if avoid_growth:
+            # Repeated OOM/timeout for this family: drop the operation that
+            # adds a layer, and let rescale only go down.
+            choices = ["shrink", "rescale", "toggle_ln"]
+        op = rng.choice(choices)
         if op == "grow" and len(dims) < 4:
             dims.append(max(32, dims[-1] // 2))
         elif op == "shrink" and len(dims) > 1:
             dims.pop()
         elif op == "rescale":
             idx = rng.randrange(len(dims))
-            dims[idx] = int(min(1024, max(32, dims[idx] * rng.choice([0.5, 2.0]))))
+            factor = 0.5 if avoid_growth else rng.choice([0.5, 2.0])
+            dims[idx] = int(min(1024, max(32, dims[idx] * factor)))
         elif op == "toggle_ln":
             out["layer_norm"] = not out.get("layer_norm", True)
         out["hidden_dims"] = dims
         out["dropout"] = min(0.5, max(0.0, out["dropout"] + rng.gauss(0, 0.05)))
         out["learning_rate"] = min(0.01, max(1e-4, out["learning_rate"] * (2 ** rng.gauss(0, 0.5))))
         out["epochs"] = int(min(60, max(5, out["epochs"] + rng.randint(-5, 10))))
+        if avoid_growth:
+            out["epochs"] = min(out["epochs"], int(p.get("epochs", out["epochs"])))
         return out
 
 
@@ -680,25 +779,26 @@ class FormulaExpert(ProposalExpert):
         parents: List[Program],
         *,
         iteration: int,
+        guidance: Optional[Any] = None,
     ) -> Program:
         if self._llm_edit_fn is not None and parents:
             code = self._llm_edit_fn(parents[0].code, action)
             program = self._new_program(code, action=action, parents=parents,
                                         iteration=iteration)
             program.meta["llm_guided"] = True
+            _stamp_guidance(program, guidance)
             return program
 
         base: Optional[Dict[str, Any]] = None
-        if parents and self.kind != ExpertKind.EXPLORE:
-            try:
-                base = self.extract_hyperparams(parents[0])
-            except (ValueError, SyntaxError):
-                base = None
+        if self.kind != ExpertKind.EXPLORE:
+            base = self.inherit_hyperparams(parents, {"terms": []})
 
-        params = self._fresh() if base is None else self._mutate(base)
+        params = self._fresh() if base is None else self._mutate(base, guidance)
         code = _render_formula(self.kind.value, params)
-        return self._new_program(code, action=action, parents=parents,
-                                 iteration=iteration)
+        program = self._new_program(code, action=action, parents=parents,
+                                    iteration=iteration)
+        _stamp_guidance(program, guidance)
+        return program
 
     # -- generation ------------------------------------------------------
 
@@ -716,13 +816,24 @@ class FormulaExpert(ProposalExpert):
             })
         return {"terms": self._normalise(terms)}
 
-    def _mutate(self, base: Dict[str, Any]) -> Dict[str, Any]:
+    def _mutate(self, base: Dict[str, Any], guidance: Optional[Any] = None) -> Dict[str, Any]:
+        """Mutate an existing formula.
+
+        When ``guidance`` carries ``avoid_growth=True``, the "add term"
+        operation is excluded — this is the constraint that makes the
+        retrieval head have an effect in formula mode. Without it, taking 8
+        records vs 0 costs tokens but changes nothing.
+        """
         rng = self._rng
         terms = [dict(t) for t in base.get("terms", [])]
         if not terms:
             return self._fresh()
 
-        op = rng.choice(["reweight", "swap", "add", "drop", "retransform"])
+        ops = ["reweight", "swap", "add", "drop", "retransform"]
+        if _avoid_growth(guidance):
+            ops.remove("add")
+
+        op = rng.choice(ops)
         if op == "reweight":
             # Perturb every weight; large edits to one term tend to just delete
             # it, which the `drop` op already covers.

@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<!--
+  FaQ monitor — single file, no build step, no CDN.
+
+  Everything is hand-rolled: SVG for the trajectory, CSS grid for the layout, one SSE
+  connection for the data. No npm, no bundler, no external requests. A dashboard that
+  needs a network to render is useless for watching a run on a remote box through an
+  SSH tunnel.
+
+  Data flow: /api/stream pushes a full snapshot once a second; render() is a pure
+  function of that snapshot. Detail panels fetch on click, because a program carries
+  its full source and its full LLM exchange and nobody is reading 100k of those at once.
+
+  Run control (the top bar's buttons) only appears when the server was started with
+  --api-base. Without it this page cannot change anything — it only reads files.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FaQ 演化过程实时监控</title>
+<style>
+  :root {
+    --md-primary:#0b57d0; --md-on-primary:#ffffff; --md-primary-container:#d3e3fd; --md-on-primary-container:#041e49;
+    --md-background:#f8fafd; --md-surface:#ffffff; --md-surface-variant:#eef3f8; --md-outline:#c7cdd5; --md-outline-variant:#e1e5eb;
+    --md-text:#202124; --md-text-secondary:#5f6368; --md-success:#137333; --md-success-container:#e6f4ea;
+    --md-warning:#7c5800; --md-warning-container:#fef7e0; --md-error:#b3261e; --md-error-container:#f9dedc;
+    --radius-card:16px; --radius-control:12px;
+    --shadow:0 1px 2px rgba(60,64,67,.15),0 2px 6px rgba(60,64,67,.08);
+    --mono: ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  html { background:var(--md-background); }
+  body { margin:0; background:var(--md-background); color:var(--md-text); font:14px/1.5 var(--font); -webkit-font-smoothing:antialiased; }
+  button { font:inherit; }
+  a { color:var(--md-primary); }
+  code, .mono { font-family:var(--mono); }
+  .num, .metric-value, td.num, th.num, #updated-at { font-variant-numeric:tabular-nums; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+  .app-bar {
+    position:sticky; top:0; z-index:20; min-height:72px; padding:12px 24px;
+    display:flex; align-items:center; gap:16px; background:rgba(255,255,255,.94);
+    border-bottom:1px solid var(--md-outline-variant); backdrop-filter:blur(12px);
+  }
+  .product-mark { flex:0 0 40px; width:40px; height:40px; display:grid; place-items:center; border-radius:12px; color:var(--md-on-primary); background:var(--md-primary); font-size:20px; font-weight:700; box-shadow:var(--shadow); }
+  .brand-block { min-width:170px; }
+  .brand { color:var(--md-text); font-size:17px; font-weight:650; letter-spacing:.1px; }
+  .product-subtitle { color:var(--md-text-secondary); font-size:12px; }
+  .run-meta { display:flex; min-width:0; align-items:center; gap:10px; flex:1; }
+  #runname { max-width:300px; overflow:hidden; color:var(--md-on-primary-container); background:var(--md-primary-container); text-overflow:ellipsis; white-space:nowrap; }
+  #cfg { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .status-chip, .meta-chip { display:inline-flex; align-items:center; min-height:32px; gap:7px; padding:5px 11px; border:1px solid var(--md-outline-variant); border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
+  .status-chip.live { color:var(--md-on-primary); background:var(--md-primary); border-color:var(--md-primary); }
+  .status-chip.done { color:var(--md-success); background:var(--md-success-container); border-color:transparent; }
+  .status-chip.stale { color:var(--md-warning); background:var(--md-warning-container); border-color:transparent; }
+  .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .status-chip.live .dot { background:var(--md-on-primary); }
+  .live .dot { animation:pulse 1.1s steps(2,end) infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+  #updated-at { color:var(--md-text-secondary); font-size:11px; white-space:nowrap; }
+
+  main { width:min(1600px,100%); margin:0 auto; padding:24px; }
+  .warning-stack { display:grid; gap:8px; margin-bottom:16px; }
+  .card { background:var(--md-surface); border:1px solid var(--md-outline-variant); border-radius:var(--radius-card); box-shadow:var(--shadow); overflow:hidden; }
+  .hero-card, .control-card, .island-section { margin-bottom:18px; }
+  .section-heading { padding:20px 20px 0; display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .section-heading h1, .section-heading h2 { margin:0; color:var(--md-text); font-weight:650; }
+  .section-heading h1 { font-size:23px; }
+  .section-heading h2 { font-size:17px; }
+  .section-heading .note { color:var(--md-text-secondary); font-size:12px; }
+  .metric-grid { display:grid; grid-template-columns:repeat(8,minmax(104px,1fr)); gap:12px; padding:18px 20px 20px; }
+  .metric { min-width:0; padding:14px; border:1px solid var(--md-outline-variant); border-radius:var(--radius-control); background:var(--md-background); }
+  .metric-label { color:var(--md-text-secondary); font-size:11px; font-weight:600; }
+  .metric-value { margin-top:5px; color:var(--md-text); font:600 21px/1.2 var(--mono); overflow:hidden; text-overflow:ellipsis; }
+  .metric.emphasis { border-color:#a8c7fa; background:#edf3fe; }
+  .metric.emphasis .metric-value { color:var(--md-primary); }
+  .bar { height:4px; background:var(--md-surface-variant); border-radius:999px; margin-top:7px; overflow:hidden; }
+  .bar span { display:block; height:100%; border-radius:inherit; background:var(--md-primary); }
+
+  .control-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:16px 20px 20px; }
+  .control-bar button {
+    min-height:38px; padding:0 18px; cursor:pointer; color:var(--md-on-primary); background:var(--md-primary);
+    border:0; border-radius:999px; font-weight:650;
+  }
+  .control-bar button.ghost { color:var(--md-primary); background:var(--md-primary-container); }
+  .control-bar button.danger { color:var(--md-on-primary); background:var(--md-error); }
+  .control-bar button:disabled { cursor:not-allowed; opacity:.45; }
+  .control-bar button:focus-visible { outline:3px solid rgba(11,87,208,.25); outline-offset:2px; }
+  #control-note { color:var(--md-text-secondary); font-size:12px; margin-left:auto; }
+  #control-note.err { color:var(--md-error); }
+  #control-note.ok { color:var(--md-success); }
+
+  #islands { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; padding:14px 20px 20px; }
+  .island-card {
+    position:relative; min-height:104px; padding:13px; cursor:pointer; outline:none;
+    border:1px solid var(--md-outline-variant); border-radius:var(--radius-control);
+    background:var(--md-surface); transition:box-shadow .16s, border-color .16s;
+  }
+  .island-card:hover { border-color:#a8c7fa; box-shadow:0 2px 8px rgba(60,64,67,.16); }
+  .island-card:focus-visible { border-color:var(--md-primary); box-shadow:0 0 0 3px rgba(11,87,208,.18); }
+  .island-card .island-name { font-weight:650; margin-right:56px; }
+  .island-state { position:absolute; top:14px; right:13px; display:flex; align-items:center; gap:5px; color:var(--md-text-secondary); font-size:10px; }
+  .island-state-dot { width:7px; height:7px; border-radius:50%; background:var(--md-outline); }
+  .island-card.running { border-color:#a8c7fa; background:#f5f8ff; }
+  .island-card.running .island-state-dot { background:var(--md-primary); animation:pulse 1.1s ease-in-out infinite; }
+  .island-card.idle .island-state-dot { background:var(--md-success); }
+  .island-meta { margin-top:10px; color:var(--md-text-secondary); font:11px/1.5 var(--mono); font-variant-numeric:tabular-nums; }
+  .island-best { margin-top:6px; color:var(--md-primary); font:650 15px var(--mono); }
+
+  .dashboard-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .dashboard-grid > .card { min-width:0; }
+  .card-content { padding:16px 20px 20px; }
+  .full-card { margin-top:18px; }
+
+  .funnel-row { display:flex; align-items:center; gap:8px; min-height:28px; font-size:11px; border-bottom:1px solid var(--md-outline-variant); }
+  .funnel-row .lbl { flex:0 0 96px; color:var(--md-text-secondary); font-family:var(--mono); font-size:10px; text-align:right; }
+  .funnel-bar { flex:1; height:10px; overflow:hidden; display:flex; border-radius:999px; background:var(--md-surface-variant); }
+  .funnel-bar .keep { background:var(--md-primary); height:100%; }
+  .funnel-bar .lost { background:#f9ab00; height:100%; opacity:.75; }
+  .funnel-row .num { flex:0 0 96px; text-align:right; font-family:var(--mono); font-size:10px; }
+  .funnel-row.terminal { border-top:1px solid var(--md-outline); border-bottom:0; }
+  .funnel-row.terminal .keep { background:var(--md-success); }
+  .funnel-row.terminal .lbl { color:var(--md-success); font-weight:650; }
+  .reject-tags { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+  .reject-tags span { padding:3px 9px; color:var(--md-warning); background:var(--md-warning-container); border-radius:999px; font:10px var(--mono); }
+
+  .table-scroll { width:100%; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { text-align:left; padding:9px 10px; white-space:nowrap; }
+  thead th { color:var(--md-text-secondary); font-weight:650; font-size:10px; border-bottom:1px solid var(--md-outline); background:var(--md-surface-variant); font-family:var(--mono); }
+  tbody tr { border-bottom:1px solid var(--md-outline-variant); }
+  tbody tr:last-child { border-bottom:0; }
+  td.num, th.num { text-align:right; font-family:var(--mono); }
+  tr.click { cursor:pointer; }
+  tr.click:hover { background:#f0f4f9; }
+  tr.click:focus-visible { outline:2px solid var(--md-primary); outline-offset:-2px; }
+  .ok { color:var(--md-success); font-weight:650; }
+  .bad { color:var(--md-error); font-weight:650; }
+  .zero { color:var(--md-text-secondary); }
+
+  .warn-box { padding:10px 12px; color:var(--md-warning); background:var(--md-warning-container); border:1px solid #f6d78b; border-radius:var(--radius-control); font-size:12px; }
+  .warn-box.err { color:var(--md-error); background:var(--md-error-container); border-color:#f2b8b5; }
+  .empty { color:var(--md-text-secondary); font-size:12px; padding:12px 2px; }
+  .sub { font-size:11px; color:var(--md-text-secondary); }
+  .page-foot { margin:22px 2px 6px; color:var(--md-text-secondary); font-size:12px; }
+
+  #scrim { position:fixed; inset:0; z-index:30; opacity:0; pointer-events:none; background:rgba(32,33,36,.32); transition:opacity .2s; }
+  #scrim.open { opacity:1; pointer-events:auto; }
+  #drawer {
+    position:fixed; top:0; right:0; z-index:40; width:min(860px,96vw); height:100%;
+    display:flex; flex-direction:column; background:var(--md-surface);
+    border-left:1px solid var(--md-outline-variant); box-shadow:-8px 0 28px rgba(60,64,67,.18);
+    transform:translateX(102%); transition:transform .22s ease-out;
+  }
+  #drawer.open { transform:none; }
+  #drawer .head { display:flex; align-items:flex-start; gap:12px; padding:20px; border-bottom:1px solid var(--md-outline-variant); }
+  #drawer .head b { font-size:19px; overflow:hidden; text-overflow:ellipsis; }
+  .x { width:40px; height:40px; margin-left:auto; display:grid; place-items:center; flex:0 0 40px; cursor:pointer; color:var(--md-text-secondary); background:transparent; border:0; border-radius:50%; font-size:22px; line-height:1; }
+  .x:hover { color:var(--md-primary); background:var(--md-surface-variant); }
+  #drawer .body { padding:20px; overflow:auto; flex:1; }
+  #drawer .body h2 { margin:22px 0 10px; font-size:14px; }
+  #drawer .body h2:first-child { margin-top:0; }
+  #drawer pre { padding:12px; overflow:auto; background:var(--md-surface-variant); border:1px solid var(--md-outline-variant); border-radius:var(--radius-control); font:11px/1.55 var(--mono); white-space:pre-wrap; word-break:break-word; }
+  .kv { display:grid; grid-template-columns:minmax(96px,auto) 1fr; gap:7px 18px; margin:0 0 18px; font-size:12px; }
+  .kv dt { color:var(--md-text-secondary); }
+  .kv dd { margin:0; font-family:var(--mono); font-variant-numeric:tabular-nums; word-break:break-all; }
+  .lineage { display:grid; gap:6px; }
+  .lineage div { padding:8px 10px; border:1px solid var(--md-outline-variant); border-left:3px solid var(--md-primary); border-radius:var(--radius-control); font:11px var(--mono); }
+  #traj { width:100%; height:180px; }
+
+  @media (max-width:1180px) {
+    .metric-grid { grid-template-columns:repeat(4,minmax(104px,1fr)); }
+    .dashboard-grid { grid-template-columns:1fr; }
+  }
+  @media (max-width:760px) {
+    .app-bar { position:static; align-items:flex-start; padding:12px 16px; flex-wrap:wrap; }
+    .brand-block { min-width:0; flex:1; }
+    .run-meta { order:3; width:100%; flex-wrap:wrap; }
+    #cfg { width:100%; white-space:normal; }
+    main { padding:16px; }
+    .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); padding:14px 16px 16px; gap:8px; }
+    .section-heading { padding:17px 16px 0; }
+    #islands { grid-template-columns:1fr; padding:10px 16px 16px; }
+    .card-content { padding:14px 16px 16px; }
+    #control-note { margin-left:0; width:100%; }
+    table { min-width:560px; }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+  }
+</style>
+</head>
+
+<body>
+
+<header class="app-bar">
+  <div class="product-mark" aria-hidden="true">F</div>
+  <div class="brand-block">
+    <div class="brand">FaQ</div>
+    <div class="product-subtitle">演化过程实时监控</div>
+  </div>
+  <span id="status" class="status-chip stale"><span class="dot"></span>等待事件</span>
+  <div class="run-meta">
+    <span id="runname" class="meta-chip"></span>
+    <span id="cfg" class="sub"></span>
+  </div>
+  <time id="updated-at" aria-live="polite">尚未更新</time>
+</header>
+
+<main>
+  <div class="warning-stack" id="warnbox" hidden></div>
+
+  <section class="card hero-card" aria-labelledby="overview-heading">
+    <div class="section-heading"><h1 id="overview-heading">运行总览</h1><span class="note" id="overview-note"></span></div>
+    <div class="metric-grid" id="stats"></div>
+  </section>
+
+  <section class="card control-card" id="control-card" hidden aria-labelledby="control-heading">
+    <div class="section-heading">
+      <h2 id="control-heading">运行控制</h2>
+      <span class="note" id="control-target"></span>
+    </div>
+    <div class="control-bar">
+      <button type="button" data-action="start">开始</button>
+      <button type="button" class="ghost" data-action="pause">暂停</button>
+      <button type="button" class="ghost" data-action="continue">继续</button>
+      <button type="button" class="danger" data-action="stop">停止</button>
+      <button type="button" class="danger" data-action="cancel">取消</button>
+      <span id="control-note" role="status" aria-live="polite"></span>
+    </div>
+  </section>
+
+  <section class="card island-section" aria-labelledby="island-heading">
+    <div class="section-heading"><h2 id="island-heading">岛屿层级</h2><span class="note" id="island-note"></span></div>
+    <div id="islands"></div>
+  </section>
+
+  <div class="dashboard-grid">
+    <section class="card" aria-labelledby="funnel-heading">
+      <div class="section-heading"><h2 id="funnel-heading">质量漏斗</h2><span class="note">每个 Rollout 的去向</span></div>
+      <div class="card-content" id="funnel"></div>
+    </section>
+
+    <section class="card" aria-labelledby="traj-heading">
+      <div class="section-heading"><h2 id="traj-heading">最优分数轨迹</h2><span class="note" id="traj-note"></span></div>
+      <div class="card-content">
+        <svg id="traj" viewBox="0 0 560 180" preserveAspectRatio="none" aria-label="最优分数随迭代变化"></svg>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="llm-heading">
+      <div class="section-heading"><h2 id="llm-heading">LLM 成本</h2><span class="note">按模型聚合</span></div>
+      <div class="card-content table-scroll">
+        <table><thead><tr>
+          <th>模型</th><th class="num">调用</th><th class="num">失败</th>
+          <th class="num">输入 Token</th><th class="num">输出 Token</th><th class="num">均耗时</th>
+        </tr></thead><tbody id="llm"></tbody></table>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="rollout-heading">
+      <div class="section-heading"><h2 id="rollout-heading">近期 Rollout</h2><span class="note">点击查看完整记录</span></div>
+      <div class="card-content table-scroll">
+        <table><thead><tr>
+          <th class="num">迭代</th><th class="num">岛</th><th>状态</th>
+          <th>程序</th><th class="num">分数</th><th class="num">耗时</th>
+        </tr></thead><tbody id="rollouts"></tbody></table>
+      </div>
+    </section>
+  </div>
+
+  <section class="card full-card" aria-labelledby="top-heading">
+    <div class="section-heading"><h2 id="top-heading">Top 程序</h2><span class="note">点击查看代码与 LLM 交互</span></div>
+    <div class="card-content table-scroll">
+      <table><thead><tr>
+        <th>程序 ID</th><th class="num">综合评分</th><th class="num">有效性</th>
+        <th class="num">代次</th><th class="num">迭代</th><th class="num">岛</th><th>父代</th>
+      </tr></thead><tbody id="top"></tbody></table>
+    </div>
+  </section>
+
+  <p class="page-foot">
+    本页只读取运行目录中的产出文件，不会影响演化进程。跑完之后的 LLM 复盘报告由
+    <code>api_server/report.py</code> 单独生成，两者并存、互不干扰。
+  </p>
+</main>
+
+<div id="scrim" aria-hidden="true" hidden></div>
+<aside id="drawer" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="dtitle">
+  <div class="head">
+    <b id="dtitle">详情</b>
+    <button class="x" id="dclose" type="button" aria-label="关闭详情">&times;</button>
+  </div>
+  <div class="body" id="dbody"></div>
+</aside>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- small helpers
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g,
+  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const DASH = "&ndash;";
+
+function finiteNumber(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+const num = (value, digits = 4) => {
+  const n = finiteNumber(value);
+  return n == null ? DASH : esc(n.toFixed(digits));
+};
+const int = (value) => {
+  const n = finiteNumber(value);
+  return n == null ? DASH : esc(String(Math.round(n)));
+};
+const K = (value) => {
+  const n = finiteNumber(value);
+  if (n == null) return DASH;
+  return n >= 1e6 ? esc((n / 1e6).toFixed(1) + "M")
+    : n >= 1e3 ? esc((n / 1e3).toFixed(1) + "k") : esc(String(n));
+};
+const dur = (value) => {
+  const n = finiteNumber(value);
+  if (n == null) return DASH;
+  const s = Math.round(n);
+  if (s < 60) return esc(s + "s");
+  const m = Math.floor(s / 60);
+  return m < 60 ? esc(m + "m " + (s % 60) + "s")
+    : esc(Math.floor(m / 60) + "h " + (m % 60) + "m");
+};
+const clock = (value) => {
+  const n = finiteNumber(value);
+  return n == null ? DASH : esc(new Date(n * 1000).toLocaleTimeString());
+};
+
+let LAST = null;
+let CONTROL_BUSY = false;
+
+// ------------------------------------------------------------------- rendering
+function render(state) {
+  LAST = state;
+
+  const chip = $("status");
+  if (state.finished) {
+    chip.className = "status-chip done";
+    chip.innerHTML = `<span class="dot"></span>已完成`;
+  } else if (state.live) {
+    chip.className = "status-chip live";
+    chip.innerHTML = `<span class="dot"></span>运行中`;
+  } else {
+    chip.className = "status-chip stale";
+    chip.innerHTML = `<span class="dot"></span>${state.last_event_at ? "已停止" : "等待事件"}`;
+  }
+
+  $("runname").textContent = state.experiment_id || "";
+  $("runname").title = state.run_dir || "";
+
+  const cfg = state.config || {};
+  $("cfg").textContent = [
+    cfg.strategy ? `策略 ${cfg.strategy}` : null,
+    cfg.num_islands != null ? `${cfg.num_islands} 岛` : null,
+    cfg.population_size != null ? `种群 ${cfg.population_size}` : null,
+    cfg.llm_model || null,
+    cfg.backend ? `后端 ${cfg.backend}` : null,
+  ].filter(Boolean).join(" · ");
+  $("cfg").title = cfg.task_description || "";
+
+  $("updated-at").textContent = state.last_event_at
+    ? "最后事件 " + new Date(state.last_event_at * 1000).toLocaleTimeString()
+    : "尚未更新";
+
+  renderWarnings(state.warnings || []);
+  renderStats(state);
+  renderControl(state.control || {});
+  renderIslands(state.islands || []);
+  renderFunnel(state.funnel || [], state.reject_counts || []);
+  renderTrajectory(state.best_trajectory || []);
+  renderLLM(state.llm_by_model || []);
+  renderRollouts(state.recent_rollouts || []);
+  renderTop(state.top_programs || []);
+}
+
+function renderWarnings(warnings) {
+  const box = $("warnbox");
+  box.hidden = warnings.length === 0;
+  box.innerHTML = warnings.slice(0, 6).map((w) =>
+    `<div class="warn-box${w.level === "ERROR" ? " err" : ""}">
+       <b>${esc(w.level)}</b> ${clock(w.at)} · ${esc(w.message)}
+     </div>`).join("");
+}
+
+function metric(label, value, { emphasis = false, extra = "" } = {}) {
+  return `<div class="metric${emphasis ? " emphasis" : ""}">
+    <div class="metric-label">${esc(label)}</div>
+    <div class="metric-value">${value}</div>${extra}</div>`;
+}
+
+function renderStats(state) {
+  const t = state.totals || {};
+  const pct = Math.max(0, Math.min(100, (state.progress || 0) * 100));
+  const iterations = state.max_iterations
+    ? `${int(state.current_iteration)}<span class="sub"> / ${int(state.max_iterations)}</span>`
+    : int(state.current_iteration);
+
+  $("stats").innerHTML = [
+    metric("迭代进度", iterations, { extra: `<div class="bar"><span style="width:${pct}%"></span></div>` }),
+    metric("最优综合评分", num(t.best_score), { emphasis: true }),
+    metric("程序总数", int(t.n_programs)),
+    metric("Rollout 总数", int(t.n_rollouts)),
+    metric("岛屿数", int(t.n_islands)),
+    metric("LLM 调用", K(t.llm_calls)),
+    metric("Token 合计", K((t.prompt_tokens || 0) + (t.response_tokens || 0))),
+    metric("运行时长", dur(t.elapsed)),
+  ].join("");
+
+  $("overview-note").textContent = t.best_program_id ? `最优程序 ${t.best_program_id}` : "";
+}
+
+function renderControl(control) {
+  const card = $("control-card");
+  card.hidden = !control.enabled;
+  if (!control.enabled) return;
+  $("control-target").textContent =
+    `${control.api_base} · worker ${control.worker_id}`;
+}
+
+function renderIslands(islands) {
+  const box = $("islands");
+  $("island-note").textContent = islands.length ? `共 ${islands.length} 个岛屿` : "";
+  if (!islands.length) {
+    box.innerHTML = `<div class="empty">尚未产出程序。种群统计会在第一个程序落盘后出现。</div>`;
+    return;
+  }
+  const newest = Math.max(...islands.map((i) => i.last_event_at || 0));
+  box.innerHTML = islands.map((island) => {
+    // "running" is a display heuristic, not a fact the files record: islands take
+    // turns, so the one that wrote most recently is the one currently working.
+    const running = island.last_event_at && island.last_event_at === newest && newest > 0;
+    return `<div class="island-card ${running ? "running" : "idle"}" tabindex="0" role="button"
+        data-island="${esc(island.island_id)}" aria-label="岛屿 ${esc(island.island_id)} 详情">
+      <div class="island-name">岛屿 ${esc(island.island_id)}</div>
+      <div class="island-state"><span class="island-state-dot"></span>${running ? "活跃" : "空闲"}</div>
+      <div class="island-best">${num(island.best_score)}</div>
+      <div class="island-meta">${int(island.n_programs)} 程序 · 均值 ${num(island.avg_score, 3)}
+        <br>代次 ${int(island.max_generation)} · 异常 ${int(island.n_error)}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderFunnel(funnel, rejects) {
+  const top = funnel.length ? (funnel[0].count || 0) : 0;
+  if (!top) {
+    $("funnel").innerHTML = `<div class="empty">尚未有 Rollout 完成。</div>`;
+    return;
+  }
+  const rows = funnel.map((stage, index) => {
+    const keep = Math.max(0, Math.min(100, (stage.count / top) * 100));
+    const terminal = index === funnel.length - 1;
+    return `<div class="funnel-row${terminal ? " terminal" : ""}">
+      <span class="lbl">${esc(stage.label)}</span>
+      <span class="funnel-bar"><span class="keep" style="width:${keep}%"></span>
+        <span class="lost" style="width:${100 - keep}%"></span></span>
+      <span class="num">${int(stage.count)} (${esc(keep.toFixed(0))}%)</span>
+    </div>`;
+  }).join("");
+  const tags = rejects.length
+    ? `<div class="reject-tags">${rejects.slice(0, 8).map((r) =>
+        `<span>${esc(r.reason)} × ${int(r.count)}</span>`).join("")}</div>`
+    : "";
+  $("funnel").innerHTML = rows + tags;
+}
+
+function renderTrajectory(points) {
+  const svg = $("traj");
+  $("traj-note").textContent = points.length ? `${points.length} 次刷新` : "";
+  if (points.length < 2) {
+    svg.innerHTML = `<text x="280" y="92" text-anchor="middle" font-size="12"
+      fill="#5f6368">至少需要两次刷新才能画出轨迹</text>`;
+    return;
+  }
+  const W = 560, H = 180, PAD = 12;
+  const scores = points.map((p) => p.best_score);
+  const lo = Math.min(...scores), hi = Math.max(...scores);
+  const span = hi - lo || 1;
+  const x = (i) => PAD + (i / (points.length - 1)) * (W - 2 * PAD);
+  const y = (v) => H - PAD - ((v - lo) / span) * (H - 2 * PAD);
+  const line = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.best_score).toFixed(1)}`).join("");
+  const area = `${line}L${x(points.length - 1).toFixed(1)},${H - PAD}L${x(0).toFixed(1)},${H - PAD}Z`;
+  svg.innerHTML = `
+    <path d="${area}" fill="#d3e3fd" opacity=".6"></path>
+    <path d="${line}" fill="none" stroke="#0b57d0" stroke-width="2"
+      stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+    <circle cx="${x(points.length - 1).toFixed(1)}" cy="${y(scores[scores.length - 1]).toFixed(1)}"
+      r="3.5" fill="#0b57d0"></circle>
+    <text x="${PAD}" y="14" font-size="10" fill="#5f6368">${esc(hi.toFixed(4))}</text>
+    <text x="${PAD}" y="${H - 2}" font-size="10" fill="#5f6368">${esc(lo.toFixed(4))}</text>`;
+}
+
+function renderLLM(rows) {
+  $("llm").innerHTML = rows.length ? rows.map((r) => `<tr>
+      <td>${esc(r.model)}</td>
+      <td class="num">${int(r.calls)}</td>
+      <td class="num ${r.n_failed ? "bad" : "zero"}">${int(r.n_failed)}</td>
+      <td class="num">${K(r.prompt_tokens)}</td>
+      <td class="num">${K(r.response_tokens)}</td>
+      <td class="num">${r.avg_seconds == null ? DASH : esc(r.avg_seconds.toFixed(2)) + "s"}</td>
+    </tr>`).join("")
+    : `<tr><td colspan="6" class="empty">尚无 LLM 调用记录。</td></tr>`;
+}
+
+function renderRollouts(rows) {
+  $("rollouts").innerHTML = rows.length ? rows.slice(0, 80).map((r) => {
+    const ok = r.status === "success";
+    const detail = ok ? "" : esc(r.failed_module || r.error_message || "");
+    return `<tr class="click" tabindex="0" data-rollout="${esc(r.rollout_id)}">
+      <td class="num">${int(r.iteration)}</td>
+      <td class="num">${r.island_id == null ? DASH : int(r.island_id)}</td>
+      <td class="${ok ? "ok" : "bad"}">${esc(r.status || "?")}${detail ? ` <span class="sub">${detail}</span>` : ""}</td>
+      <td class="mono">${esc(r.program_id || "")}</td>
+      <td class="num">${num(r.score)}</td>
+      <td class="num">${r.seconds == null ? DASH : esc(r.seconds.toFixed(2)) + "s"}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty">尚无 Rollout 记录。</td></tr>`;
+}
+
+function renderTop(rows) {
+  $("top").innerHTML = rows.length ? rows.map((p) => `<tr class="click" tabindex="0" data-program="${esc(p.id)}">
+      <td class="mono">${esc(p.id)}</td>
+      <td class="num">${num(p.combined_score)}</td>
+      <td class="num ${p.is_buggy ? "bad" : ""}">${num(p.validity, 2)}</td>
+      <td class="num">${int(p.generation)}</td>
+      <td class="num">${int(p.iteration)}</td>
+      <td class="num">${p.island_id == null ? DASH : int(p.island_id)}</td>
+      <td class="mono">${esc(p.parent_id || "")}</td>
+    </tr>`).join("") : `<tr><td colspan="7" class="empty">尚无已评分的程序。</td></tr>`;
+}
+
+// ---------------------------------------------------------------------- drawer
+function openDrawer(title, html) {
+  $("dtitle").innerHTML = title;
+  $("dbody").innerHTML = html;
+  $("drawer").classList.add("open");
+  $("drawer").setAttribute("aria-hidden", "false");
+  $("scrim").hidden = false;
+  $("scrim").classList.add("open");
+  $("dclose").focus();
+}
+
+function closeDrawer() {
+  $("drawer").classList.remove("open");
+  $("drawer").setAttribute("aria-hidden", "true");
+  $("scrim").classList.remove("open");
+  $("scrim").hidden = true;
+}
+
+$("dclose").addEventListener("click", closeDrawer);
+$("scrim").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+
+// Each fetch bumps a token so a slow response for a row the user already navigated
+// away from cannot overwrite the panel they are looking at now.
+let DETAIL_TOKEN = 0;
+
+async function loadDetail(title, url, build) {
+  const token = ++DETAIL_TOKEN;
+  openDrawer(title, `<div class="empty">加载中…</div>`);
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    if (token !== DETAIL_TOKEN) return;
+    openDrawer(title, build(data));
+  } catch (e) {
+    if (token !== DETAIL_TOKEN) return;
+    openDrawer(title, `<div class="warn-box err">${esc(e.message || e)}</div>`);
+  }
+}
+
+const kv = (pairs) => `<dl class="kv">${pairs
+  .filter(([, v]) => v !== "" && v != null)
+  .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>`;
+
+const block = (title, text) => text
+  ? `<h2>${esc(title)}</h2><pre>${esc(text)}</pre>` : "";
+
+function buildProgram(d) {
+  const metrics = Object.entries(d.metrics || {});
+  return kv([
+    ["综合评分", num(d.combined_score)],
+    ["有效性", num(d.validity, 2)],
+    ["代次 / 迭代", `${int(d.generation)} / ${int(d.iteration)}`],
+    ["岛屿", d.island_id == null ? DASH : int(d.island_id)],
+    ["父代", esc(d.parent_id || DASH)],
+    ["创建时间", clock(d.created_at)],
+  ])
+  + (metrics.length ? `<h2>评估指标</h2>${kv(metrics.map(([k, v]) =>
+      [k, typeof v === "number" ? num(v) : esc(String(v))]))}` : "")
+  + (d.error_info ? `<h2>错误信息</h2><div class="warn-box err">${esc(d.error_info)}</div>` : "")
+  + (d.lineage && d.lineage.length > 1
+      ? `<h2>血缘</h2><div class="lineage">${d.lineage.map((a) =>
+          `<div>${esc(a.id)} · 代次 ${int(a.generation)} · 分数 ${num(a.combined_score)}</div>`).join("")}</div>`
+      : "")
+  + block("代码", d.code)
+  + block("System Prompt", d.system_prompt)
+  + block("Prompt", d.prompt)
+  + block("思考过程", d.thinking)
+  + block("LLM 响应", d.response);
+}
+
+function buildRollout(d) {
+  return kv([
+    ["状态", `<span class="${d.status === "success" ? "ok" : "bad"}">${esc(d.status)}</span>`],
+    ["迭代 / 岛屿", `${int(d.iteration)} / ${d.island_id == null ? DASH : int(d.island_id)}`],
+    ["流程", esc(d.rollout_name || DASH)],
+    ["尝试次数", int(d.rollout_attempt)],
+    ["失败模块", esc(d.failed_module || DASH)],
+    ["产出程序", esc(d.generated_program_id || DASH)],
+    ["耗时", d.created_at && d.completed_at ? dur(d.completed_at - d.created_at) : DASH],
+  ])
+  + (d.error_message ? `<h2>错误信息</h2><div class="warn-box err">${esc(d.error_message)}</div>` : "")
+  + (d.generated_program_id
+      ? `<p><a href="#" data-program="${esc(d.generated_program_id)}">查看产出程序 →</a></p>` : "")
+  + block("选择", d.selection ? JSON.stringify(d.selection, null, 2) : "")
+  + block("统计", d.stats ? JSON.stringify(d.stats, null, 2) : "")
+  + block("LLM 请求", (d.llm_request_logs || []).length
+      ? JSON.stringify(d.llm_request_logs, null, 2) : "");
+}
+
+function buildIsland(d) {
+  const rows = (d.programs || []).map((p) => `<tr class="click" tabindex="0" data-program="${esc(p.id)}">
+      <td class="mono">${esc(p.id)}</td><td class="num">${int(p.iteration)}</td>
+      <td class="num">${int(p.generation)}</td><td class="num">${num(p.combined_score)}</td>
+    </tr>`).join("");
+  return kv([
+    ["程序数", int(d.n_programs)],
+    ["最优评分", num(d.best_score)],
+    ["最优程序", esc(d.best_program_id || DASH)],
+    ["平均评分", num(d.avg_score)],
+    ["最大代次", int(d.max_generation)],
+    ["异常程序", int(d.n_error)],
+  ]) + `<h2>该岛程序</h2><div class="table-scroll"><table><thead><tr>
+      <th>程序 ID</th><th class="num">迭代</th><th class="num">代次</th><th class="num">评分</th>
+    </tr></thead><tbody>${rows || `<tr><td colspan="4" class="empty">暂无</td></tr>`}</tbody></table></div>`;
+}
+
+function showProgram(id) {
+  loadDetail(`程序 ${esc(id)}`, `/api/program/${encodeURIComponent(id)}`, buildProgram);
+}
+
+document.addEventListener("click", (e) => {
+  const program = e.target.closest("[data-program]");
+  if (program) { e.preventDefault(); showProgram(program.dataset.program); return; }
+  const rollout = e.target.closest("[data-rollout]");
+  if (rollout) {
+    const id = rollout.dataset.rollout;
+    loadDetail(`Rollout ${esc(id)}`, `/api/rollout/${encodeURIComponent(id)}`, buildRollout);
+    return;
+  }
+  const island = e.target.closest("[data-island]");
+  if (island) {
+    const id = island.dataset.island;
+    loadDetail(`岛屿 ${esc(id)}`, `/api/island/${encodeURIComponent(id)}`, buildIsland);
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  const target = e.target.closest("[data-program],[data-rollout],[data-island]");
+  if (!target) return;
+  e.preventDefault();
+  target.click();
+});
+
+// --------------------------------------------------------------- run control
+// api_server answers 200 with {"code": "-1", "msg": ...} for a refused action, so the
+// body is what decides success here, not the HTTP status.
+async function control(action) {
+  if (CONTROL_BUSY) return;
+  CONTROL_BUSY = true;
+  const note = $("control-note");
+  note.className = "";
+  note.textContent = "请求中…";
+  document.querySelectorAll(".control-bar button").forEach((b) => (b.disabled = true));
+  try {
+    const response = await fetch(`/api/control/${encodeURIComponent(action)}`, { method: "POST" });
+    const body = await response.json().catch(() => ({}));
+    const ok = response.ok && String(body.code) === "0";
+    note.className = ok ? "ok" : "err";
+    note.textContent = ok ? "已提交" : (body.msg || body.detail || `HTTP ${response.status}`);
+  } catch (e) {
+    note.className = "err";
+    note.textContent = String((e && e.message) || e);
+  } finally {
+    CONTROL_BUSY = false;
+    document.querySelectorAll(".control-bar button").forEach((b) => (b.disabled = false));
+  }
+}
+
+document.querySelectorAll(".control-bar button").forEach((button) => {
+  button.addEventListener("click", () => control(button.dataset.action));
+});
+
+// ------------------------------------------------------------------- transport
+// SSE with a polling fallback: an SSH tunnel or a proxy that buffers can break the
+// event stream, and a dashboard that silently freezes is worse than a slow one.
+const SSE_FIRST_MESSAGE_TIMEOUT_MS = 6000;
+let SOURCE = null, SOURCE_VERSION = 0, HAS_MESSAGE = false;
+let WATCHDOG = null, POLLING = false, POLL_TIMER = null, POLL_IN_FLIGHT = false;
+
+function setTransportStatus(text) {
+  $("status").className = "status-chip stale";
+  $("status").innerHTML = `<span class="dot"></span>${esc(text)}`;
+}
+
+function isActive(source, version) {
+  return !POLLING && SOURCE === source && SOURCE_VERSION === version;
+}
+
+function fallbackToPolling(source, version) {
+  if (!isActive(source, version)) return;
+  if (WATCHDOG != null) clearTimeout(WATCHDOG);
+  WATCHDOG = null;
+  source.close();
+  SOURCE = null;
+  startPolling();
+}
+
+function connect() {
+  if (POLLING) return;
+  const version = ++SOURCE_VERSION;
+  let source;
+  try {
+    source = new EventSource("/api/stream");
+    SOURCE = source;
+    HAS_MESSAGE = false;
+    if (WATCHDOG != null) clearTimeout(WATCHDOG);
+    WATCHDOG = setTimeout(() => fallbackToPolling(source, version), SSE_FIRST_MESSAGE_TIMEOUT_MS);
+    source.onopen = () => { if (isActive(source, version) && !LAST) setTransportStatus("等待事件"); };
+    source.onmessage = (event) => {
+      if (!isActive(source, version)) return;
+      try {
+        const state = JSON.parse(event.data);
+        HAS_MESSAGE = true;
+        if (WATCHDOG != null) clearTimeout(WATCHDOG);
+        WATCHDOG = null;
+        render(state);
+      } catch (_) { setTransportStatus("事件解析失败，正在重连"); }
+    };
+    source.onerror = () => {
+      if (!isActive(source, version)) return;
+      setTransportStatus("连接中断，正在重连");
+      if (!HAS_MESSAGE) fallbackToPolling(source, version);
+      // After a valid message, keep the EventSource alive so native retry preserves ordering.
+    };
+  } catch (_) {
+    startPolling();
+    return;
+  }
+  // Cold start: paint immediately instead of waiting for the first tick.
+  poll(version);
+}
+
+function startPolling() {
+  if (POLLING) return;
+  POLLING = true;
+  if (WATCHDOG != null) clearTimeout(WATCHDOG);
+  WATCHDOG = null;
+  if (SOURCE) { SOURCE.close(); SOURCE = null; }
+  poll();
+}
+
+function shouldAccept(version) {
+  return version == null || POLLING || (version === SOURCE_VERSION && SOURCE != null && !HAS_MESSAGE);
+}
+
+async function poll(version = null) {
+  if (POLL_IN_FLIGHT) return;
+  POLL_IN_FLIGHT = true;
+  try {
+    const response = await fetch("/api/state");
+    if (!response.ok) throw new Error("state unavailable");
+    const state = await response.json();
+    if (shouldAccept(version)) render(state);
+  } catch (_) {
+    if (shouldAccept(version)) setTransportStatus("连接中断，正在重连");
+  } finally {
+    POLL_IN_FLIGHT = false;
+    if (POLLING) {
+      clearTimeout(POLL_TIMER);
+      POLL_TIMER = setTimeout(poll, 2000);
+    }
+  }
+}
+
+connect();
+</script>
+</body>
+</html>

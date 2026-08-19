@@ -18,6 +18,14 @@ evolution loop:
 - ``trajectory``: Transition + TrajectoryStore for Agentic RL data.
 - ``rl``: observation/action encoding, BC + offline-RL trainers, and the
   LearnedMetaPolicy that serves a trained checkpoint.
+- ``experience``: evidence-grounded experience layer. Indexes what the search
+  has learned as retrievable records that REFERENCE the trajectory and
+  archives rather than copying them, and retrieves at a stated state version.
+  Ships failure memory: aggregated (FailureKind, model_family) patterns with
+  repair statistics, built with no LLM and no sealed data. Two retrievals per
+  decision — a cheap summary into the observation, and a policy-sized query
+  into the proposal phase whose token cost is charged back through the
+  reward. See its module doc for invariants E1-E6.
 - ``final_test``: FreezeManifest and the one-shot FinalTestService.
 
 Design invariants (do not weaken without a protocol amendment):
@@ -55,8 +63,26 @@ Design invariants (do not weaken without a protocol amendment):
    ``FailureKind`` is part of the observation space — adding or renaming a
    member invalidates existing policy checkpoints, same as ENCODING_VERSION.
 11. What the RL layer learns is the SEARCH policy (which expert, which
-   family, what fidelity, how wide, whether to gate) — never the stock
-   model itself. Candidates stay the experts' job.
+   family, what fidelity, how wide, whether to gate, how much experience to
+   consult) — never the stock model itself. Candidates stay the experts' job.
+12. The experience layer holds REFERENCES, never copies of events. Records
+   point at transition/evidence/candidate ids; the Trajectory Store and
+   Search Archive stay the single source of truth. It is written only from
+   inside the barrier's window and read only at a named state version, so
+   "what the agent could have known at version n" is reconstructible. See
+   ``famou.reliability.experience`` for invariants E1-E6 and for the
+   cross-episode gate-verdict channel that is deliberately still open.
+13. An action records what the registry SERVED, not only what the policy
+   asked for. Not every ``ExpertKind`` is implemented and not every declared
+   family has an expert, so ``_pick_expert`` substitutes; ``resolved_expert``
+   / ``resolved_family`` make that visible and ``ActionCodec`` encodes them.
+   Encoding the request instead would put two labels on one behaviour, and
+   an iterated offline loop would keep manufacturing such samples. A learned
+   policy is additionally masked to the reachable head values — see
+   ``ReliabilityAwareQuantStrategy.reachable_action_space``. This covers
+   registry-level aliasing only: ``linear``/``temporal_transformer`` also map
+   onto other trainers inside the candidate runtime, which is a separate,
+   documented choice.
 
 Batching is limited to single-island runs: ``_IslandTracker`` hands out
 iteration slots round-robin across islands, while a batch belongs to one

@@ -42,6 +42,35 @@ class CandidateSummary(BaseModel):
     )
 
 
+class RetrievedExperienceSummary(BaseModel):
+    """Compressed view of what the memory layer offered this decision.
+
+    Summary, not content: the policy is a small network over ~40 features, so
+    it gets counts and severities rather than statements. The statements
+    themselves go to the proposal side (stage 2), where an expert can act on
+    them. Keeping the two apart is what stops the observation growing without
+    bound as the experience index fills up.
+    """
+
+    n_retrieved: int = 0
+    n_available: int = Field(
+        default=0, description="records visible at this state version"
+    )
+    max_reliability: float = Field(
+        default=0.0, description="ranking weight of the strongest record; not a probability"
+    )
+    n_repairable: int = 0
+    n_policy_level: int = Field(
+        default=0,
+        description="patterns saying the ACTION was wrong, not the code — the "
+                    "policy is the only component that can act on these",
+    )
+    dominant_failure: Optional[str] = Field(
+        default=None, description="FailureKind of the highest-ranked record"
+    )
+    token_cost: int = 0
+
+
 class AgentObservation(BaseModel):
     """The meta-controller's input. Compressed by construction."""
 
@@ -60,6 +89,13 @@ class AgentObservation(BaseModel):
     remaining_budget: Dict[str, float] = Field(default_factory=dict)
     in_flight_tasks: int = 0
     lineage_summary: Dict[str, Any] = Field(default_factory=dict)
+    retrieved_experience: Optional[RetrievedExperienceSummary] = Field(
+        default=None,
+        description="stage 3: what retrieval surfaced at this state version. "
+                    "None means retrieval was disabled or failed — encoded as "
+                    "all-zero features, which is distinguishable from 'ran and "
+                    "found nothing' by n_available.",
+    )
 
     def digest(self) -> str:
         blob = json.dumps(
@@ -95,6 +131,7 @@ class ObservationBuilder:
         in_flight_tasks: int = 0,
         top_k: int = 8,
         failure_window: int = 50,
+        retrieved_experience: Optional[RetrievedExperienceSummary] = None,
     ) -> AgentObservation:
         certified = self._certified.members()
         certified_summaries: List[CandidateSummary] = []
@@ -147,6 +184,7 @@ class ObservationBuilder:
             recent_failure_patterns=failures,
             remaining_budget=self._ledger.remaining(episode_id=episode_id),
             in_flight_tasks=in_flight_tasks,
+            retrieved_experience=retrieved_experience,
         )
 
     def _summarize(

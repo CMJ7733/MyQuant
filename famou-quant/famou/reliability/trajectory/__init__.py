@@ -65,6 +65,17 @@ class TrajectoryStore:
         self._lock = threading.Lock()
         self._transitions: List[Transition] = []
         self._decisions: Dict[str, DecisionRecord] = {}
+        #: RetrievalBundles (kind="retrieval"). Kept as a plain list because
+        #: nothing joins on them yet — they exist so a later study can ask
+        #: whether retrieval changed anything.
+        self._retrievals: List[Any] = []
+        # Transitions this process appended, as opposed to those replayed from
+        # disk. The store is cumulative across runs on purpose (it is the RL
+        # corpus), but the reward builder must not re-score a previous run's
+        # transitions: each run starts from a fresh StateStore, so the archives
+        # it reads hold no evidence for older candidates and every one of them
+        # would be scored as invalid. See ``session_transitions``.
+        self._session_ids: set[str] = set()
         if self._path and self._path.exists():
             self._load()
 
@@ -88,6 +99,11 @@ class TrajectoryStore:
                     t = Transition.model_validate(rec["payload"])
                     self._transitions.append(t)
                     index[t.transition_id] = t
+                elif kind == "retrieval":
+                    from famou.reliability.experience.types import RetrievalBundle
+
+                    b = RetrievalBundle.model_validate(rec["payload"])
+                    self._retrievals.append(b)
                 elif kind == "reward_update":
                     payload = rec.get("payload") or {}
                     target = index.get(payload.get("transition_id"))
@@ -115,11 +131,36 @@ class TrajectoryStore:
     def record_transition(self, transition: Transition) -> None:
         with self._lock:
             self._transitions.append(transition)
+            self._session_ids.add(transition.transition_id)
             self._append("transition", transition.model_dump(mode="json"))
+
+    def record_retrieval(self, bundle: Any) -> None:
+        """Persist one RetrievalBundle.
+
+        Recorded even when nothing consumed it: the bundle is the record of
+        what experience was available at a decision, which is what makes a
+        later with/without comparison possible.
+        """
+        with self._lock:
+            self._retrievals.append(bundle)
+            self._append("retrieval", bundle.model_dump(mode="json"))
+
+    def retrievals(self) -> List[Any]:
+        with self._lock:
+            return list(self._retrievals)
 
     def transitions(self) -> List[Transition]:
         with self._lock:
             return list(self._transitions)
+
+    def session_transitions(self) -> List[Transition]:
+        """Transitions appended by THIS process, in commit order.
+
+        ``transitions()`` includes everything replayed from disk, which is what
+        the trainer wants and what the reward builder must not touch.
+        """
+        with self._lock:
+            return [t for t in self._transitions if t.transition_id in self._session_ids]
 
     def decisions(self) -> Dict[str, DecisionRecord]:
         with self._lock:

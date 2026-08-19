@@ -23,6 +23,13 @@ a batch reports:
 7. ``BarrierCommit`` writes Search Archive + Certified Archive + the new
    state version in ONE atomic step and emits the Transition.
 
+When the run ends, ``finalize_rewards()`` matures the delayed rewards over
+this run's transitions. That is deliberately not part of the commit path: a
+candidate can be escalated and gated several decisions after it was
+generated, so its reward is unknowable at the moment its batch commits.
+Without this pass every transition keeps ``reward=None`` and only stage A
+(behaviour cloning) can train — see ``famou.reliability.reward``.
+
 Invariant C1: nothing in this class writes to the archives. Results are
 staged and applied only by the barrier, so an observation can never see a
 half-finished batch. ``forward()`` remains available as a batch of one.
@@ -37,7 +44,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from famou.core.data import Context, Program, RolloutResult, SelectionData, WorkBatch
 from famou.core.protocol import Module, Rollout, Strategy
@@ -58,14 +65,26 @@ from famou.reliability.barrier import (
 )
 from famou.reliability.budget import BudgetExhausted, BudgetLedger
 from famou.reliability.evaluator import FidelityEvaluator
+from famou.reliability.experience import (
+    ExperienceConsolidator,
+    ExperienceIndex,
+    MemoryRetriever,
+    QueryType,
+)
+from famou.reliability.experience.guidance import build_guidance
 from famou.reliability.experts import ProposalExpert, default_expert_registry
 from famou.reliability.final_test import SearchClosed, is_frozen
-from famou.reliability.observation import AgentObservation, ObservationBuilder
+from famou.reliability.observation import (
+    AgentObservation,
+    ObservationBuilder,
+    RetrievedExperienceSummary,
+)
 from famou.reliability.promotion import (
     BudgetedGate,
     PromotionPolicy,
     build_gate_request,
 )
+from famou.reliability.reward import RewardBuilder
 from famou.reliability.trajectory import TrajectoryStore
 from famou.reliability.types import (
     CandidateLineage,
@@ -92,16 +111,29 @@ from famou.reliability.types import (
 
 
 class _FixedSelect(Module):
-    """Selects the parent recorded in the action (no search)."""
+    """Selects the parent recorded in the action (no search).
 
-    def __init__(self, parent_id: str):
+    Also carries the retrieved experience into ``SelectionData.experiences``,
+    the field famou's generation modules already read. The reliability line's
+    own experts receive guidance directly (they run in the control thread), so
+    this is for two other consumers: framework GenerateModules if one is ever
+    swapped in, and the rollout trace, where it records what the candidate was
+    shown without having to re-derive it from the trajectory.
+    """
+
+    def __init__(self, parent_id: str, *, experiences: Optional[List[Any]] = None):
         super().__init__()
         self._parent_id = parent_id
+        self._experiences = experiences or []
 
     def execute(self, context: Context, result: RolloutResult, **kwargs) -> RolloutResult:
         # inspiration_ids is declared with default_factory=None, which makes it
         # required in practice — every SelectModule passes it explicitly.
-        result.selection = SelectionData(parent_id=self._parent_id, inspiration_ids=[])
+        result.selection = SelectionData(
+            parent_id=self._parent_id,
+            inspiration_ids=[],
+            experiences=list(self._experiences) or None,
+        )
         return result
 
 
@@ -255,6 +287,13 @@ class HeuristicMetaPolicy:
 
     policy_version = "heuristic_v0"
 
+    #: Records to request for generation when memory has something to say.
+    #: Non-zero on purpose: this policy produces the behaviour-cloning corpus,
+    #: and a demonstrator that never retrieves teaches the retrieval head that
+    #: 0 is the only answer. The head then has no gradient to learn the
+    #: trade-off from, however the reward is weighted.
+    retrieval_when_useful = 2
+
     def __init__(self, family_cycle: Optional[List[str]] = None):
         self._family_cycle = family_cycle or ["gbdt", "mlp"]
 
@@ -272,6 +311,20 @@ class HeuristicMetaPolicy:
         return cls(family_cycle=families or ["gbdt"])
 
     def act(self, obs: AgentObservation) -> StructuredAction:
+        # Retrieval budget for the generation phase. The rule is deliberately
+        # crude — ask for experience once any has accumulated. Note it does
+        # NOT gate on n_repairable: OOM and TIMEOUT are not "repairable" in
+        # the taxonomy's sense (the fix is a smaller model, not a code edit),
+        # yet they are the only patterns that currently constrain generation.
+        # Gating on repairability skipped exactly the useful cases.
+        #
+        # This exists to put BOTH choices in the corpus — 0 early when memory
+        # is empty, non-zero later — not to be a good retrieval policy. That
+        # is what the learned head is for.
+        retrieved = obs.retrieved_experience
+        has_memory = retrieved is not None and retrieved.n_available > 0
+        top_k = self.retrieval_when_useful if has_memory else 0
+
         # 1. Promotion check first: any top visible candidate with stable F2?
         #    The action targets THAT candidate directly (promotion_target_id).
         #    Mutating it first and gating the mutation would spend the sealed
@@ -323,6 +376,7 @@ class HeuristicMetaPolicy:
                 model_family=family,
                 fidelity=Fidelity.F1_CHEAP,
                 seed_list=[11],
+                retrieval_top_k=top_k,
                 rationale="cold start: cheap exploration",
             )
 
@@ -343,6 +397,7 @@ class HeuristicMetaPolicy:
             model_family=family,
             fidelity=Fidelity.F1_CHEAP,
             seed_list=[11],
+            retrieval_top_k=top_k,
             rationale="exploit incumbent with cheap mutation",
         )
 
@@ -371,6 +426,9 @@ class ReliabilityAwareQuantStrategy(Strategy):
         meta_policy: Optional[Any] = None,
         promotion_policy: Optional[PromotionPolicy] = None,
         gate: Optional[BudgetedGate] = None,
+        reward_builder: Optional[RewardBuilder] = None,
+        retrieval_enabled: bool = True,
+        retrieval_top_k: int = 4,
         sealed_query_limit: int = 20,
         observation_encoder: Optional[Any] = None,
         params: Optional[Any] = None,
@@ -396,6 +454,17 @@ class ReliabilityAwareQuantStrategy(Strategy):
         self._admission: Optional[CertifiedAdmission] = None
         self._obs_builder: Optional[ObservationBuilder] = None
         self._barrier: Optional[BarrierCommit] = None
+        # Built with the archives (it reads evidence). Injectable so an
+        # experiment can freeze its own RewardConfig weights.
+        self._reward_builder_override = reward_builder
+        self._reward_builder: Optional[RewardBuilder] = None
+        self._experience: Optional[ExperienceIndex] = None
+        self._retriever: Optional[MemoryRetriever] = None
+        #: Stage 0/1: retrieval runs and is recorded, but never reaches the
+        #: policy. Flipping this on is stage 3 and changes the observation
+        #: encoding, so it is not a runtime toggle.
+        self.retrieval_enabled = retrieval_enabled
+        self.retrieval_top_k = int(retrieval_top_k)
 
         self.trajectory = trajectory_store or TrajectoryStore()
         # Experts are restricted to the families the frozen contract allows, so
@@ -426,6 +495,40 @@ class ReliabilityAwareQuantStrategy(Strategy):
         self._candidate_context: Dict[str, Dict[str, Any]] = {}
         self._batch_lock = threading.Lock()
         self.logger: Optional[Any] = None  # injected by Evolver at run()
+        #: (requested_kind, requested_family, served_kind, served_family) pairs
+        #: already logged — see _warn_substitution.
+        self._substitutions_seen: set = set()
+        # Tell a learned policy which head values the registry can actually
+        # serve, so it does not spend probability mass on choices that collapse
+        # onto something else. Duck-typed: HeuristicMetaPolicy has no such hook.
+        self._announce_action_space()
+
+    def reachable_action_space(self) -> Dict[str, List[str]]:
+        """Head values the expert registry can serve without substituting.
+
+        An expert kind counts as reachable if some registered expert has that
+        kind; a family counts if it has its own registered expert. Everything
+        else resolves to a different behaviour, so offering it to the policy
+        only creates actions whose label lies about what happens.
+
+        Note this covers REGISTRY-level aliasing only. ``temporal_transformer``
+        stays reachable because it has an expert, even though the candidate
+        runtime maps it onto the same trainer as ``mlp`` — that aliasing is a
+        deliberate, documented choice in famou_candidate_runtime._FAMILIES and
+        is not something this layer should silently paper over.
+        """
+        kinds = sorted({e.kind.value for e in self.experts.values()})
+        families = sorted({
+            key for key in self.experts
+            if not key.endswith(("_explore", "_hpo"))
+        })
+        return {"experts": kinds, "families": families}
+
+    def _announce_action_space(self) -> None:
+        setter = getattr(self.meta_policy, "set_reachable_action_space", None)
+        if callable(setter):
+            space = self.reachable_action_space()
+            setter(experts=space["experts"], families=space["families"])
 
     # ------------------------------------------------------------------
     # archive wiring (lazy: state_store is injected by Evolver at run())
@@ -443,6 +546,14 @@ class ReliabilityAwareQuantStrategy(Strategy):
             self._search, self._certified, self.manifest, self.ledger
         )
         self._obs_builder = ObservationBuilder(self._search, self._certified, self.ledger)
+        self._reward_builder = self._reward_builder_override or RewardBuilder(
+            self._search
+        )
+        # Experience layer shares the archives' guard: consolidation happens
+        # inside the barrier's write window, so indexed experience and archive
+        # state always carry the same version (experience invariant E2).
+        self._experience = ExperienceIndex(store, guard=self._guard)
+        self._retriever = MemoryRetriever(self._experience)
         self._barrier = BarrierCommit(
             search_archive=self._search,
             certified_archive=self._certified,
@@ -450,6 +561,9 @@ class ReliabilityAwareQuantStrategy(Strategy):
             trajectory_store=self.trajectory,
             state_store=store,
             guard=self._guard,
+            consolidator=ExperienceConsolidator(
+                self._experience, logger=self.logger
+            ),
             logger=self.logger,
         )
         if self._pending_state_version is not None:
@@ -530,11 +644,17 @@ class ReliabilityAwareQuantStrategy(Strategy):
         # this batch produces will be visible until its barrier commits.
         state_version = self._barrier.state_version
 
+        # Decision-phase retrieval: small, fixed cost, always runs. Its summary
+        # goes INTO the observation, so the policy can see what memory has to
+        # offer before choosing how much of it to buy for generation.
+        decision_bundle = self._retrieve_for_decision(state_version)
+
         obs = self._obs_builder.build(
             episode_id=self.manifest.episode_id,
             state_version=state_version,
             policy_version=self.meta_policy.policy_version,
             in_flight_tasks=self._in_flight(),
+            retrieved_experience=self._summarize_retrieval(decision_bundle),
         )
         action = self.meta_policy.act(obs)
 
@@ -557,6 +677,10 @@ class ReliabilityAwareQuantStrategy(Strategy):
                     update={"promotion_requested": False, "promotion_target_id": None}
                 )
 
+        # Resolve which expert will actually serve this action, and stamp it
+        # onto the action BEFORE the record is written (see _resolve_action).
+        action, expert = self._resolve_action(action)
+
         # A learned policy exposes the log-prob and value it acted with; a
         # heuristic one has neither. Recording them is what lets a later
         # on-policy correction know how surprised the policy was, rather than
@@ -571,8 +695,15 @@ class ReliabilityAwareQuantStrategy(Strategy):
             policy_version=self.meta_policy.policy_version,
             action_log_prob=getattr(self.meta_policy, "last_log_prob", None),
             predicted_value=getattr(self.meta_policy, "last_value", None),
+            retrieval_bundle_ids=[
+                b.query_id for b in (decision_bundle,) if b is not None
+            ],
             timestamp=time.time(),
         )
+        if decision_bundle is not None:
+            decision_bundle.decision_id = decision.decision_id
+            decision_bundle.consumed_by_policy = True
+            self.trajectory.record_retrieval(decision_bundle)
         self.trajectory.record_decision(decision)
 
         # --- promotion-only decision -------------------------------------
@@ -601,7 +732,6 @@ class ReliabilityAwareQuantStrategy(Strategy):
         # archive baselines so non-explore experts still have a parent.
         if not parents:
             parents = list(self.experiment_archive_values(ctx))[:1]
-        expert = self._pick_expert(action)
 
         # --- re-evaluation decision --------------------------------------
         # Escalate an existing candidate's fidelity instead of generating a
@@ -650,8 +780,21 @@ class ReliabilityAwareQuantStrategy(Strategy):
         rollouts: List[Rollout] = []
         accumulator = self._barrier.open(decision, expected=n)
         self._register_batch(decision, accumulator, action)
+
+        # Proposal-phase retrieval (stages 2+4). Size chosen by the policy's
+        # retrieval head; filtered to the family it actually picked, which the
+        # decision-phase query could not know. Charged to the batch's cost so
+        # the head pays for what it asked for.
+        guidance, guidance_bundle = self._retrieve_for_proposal(
+            state_version, action, decision_id=decision.decision_id
+        )
+        if guidance_bundle is not None:
+            self.trajectory.record_retrieval(guidance_bundle)
+
         for _ in range(n):
-            candidate = expert.propose(action, parents, iteration=ctx.iteration)
+            candidate = expert.propose(
+                action, parents, iteration=ctx.iteration, guidance=guidance
+            )
             candidate.meta["decision_id"] = decision.decision_id
             package = expert.package(
                 candidate,
@@ -667,11 +810,20 @@ class ReliabilityAwareQuantStrategy(Strategy):
                 "code": candidate.code,
                 "expert": action.expert.value,
                 "package": package,
+                "retrieval_tokens": (
+                    guidance_bundle.token_cost if guidance_bundle is not None else 0
+                ),
             }
             rollouts.append(
                 Rollout(
                     modules=[
-                        _FixedSelect(parents[0].id if parents else candidate.id),
+                        _FixedSelect(
+                            parents[0].id if parents else candidate.id,
+                            experiences=(
+                                [r.model_dump(mode="json") for r in guidance.records]
+                                if guidance else []
+                            ),
+                        ),
                         _PreGeneratedGenerate(candidate),
                         _ReliabilityEvaluate(
                             self.evaluator,
@@ -805,6 +957,12 @@ class ReliabilityAwareQuantStrategy(Strategy):
             # what the *visible* evaluation cost.
             cost=evidence.cost.model_copy() if evidence is not None else EvaluationCost(),
         )
+        # Charge the guidance this candidate was generated with. Attributed
+        # per candidate, not per batch: a batch of 4 built from the same
+        # retrieved context really did spend that context four times over, and
+        # a policy charged only once would learn that wide batches make
+        # retrieval free.
+        outcome.cost.retrieval_tokens += int(info.get("retrieval_tokens", 0))
         with self._batch_lock:
             entry = self._batches.get(decision_id)
         if entry is None:
@@ -816,7 +974,7 @@ class ReliabilityAwareQuantStrategy(Strategy):
         self._note_completion(decision_id)
 
     def finalize_experiment(self, contexts: Dict[int, Context]) -> None:
-        """Commit any batch left open by a stop/crash so nothing is lost."""
+        """Commit any batch left open by a stop/crash, then mature rewards."""
         del contexts
         with self._batch_lock:
             leftovers = list(self._batches.values())
@@ -836,6 +994,39 @@ class ReliabilityAwareQuantStrategy(Strategy):
             except Exception as e:  # pragma: no cover - shutdown best effort
                 if self.logger:
                     self.logger.error(f"[Barrier] final commit failed: {e}")
+        # Must run AFTER the leftovers commit: their transitions do not exist
+        # until then, and an unrewarded transition is invisible to AWR.
+        self.finalize_rewards()
+
+    def finalize_rewards(self) -> int:
+        """Fill in the delayed rewards for this run's transitions.
+
+        The reward depends on outcomes that are not known when the barrier
+        commits — a candidate may be escalated to F2 and gated several
+        decisions later — so maturation is deliberately an end-of-run pass
+        rather than part of the commit path.
+
+        Without this the trajectory is a behaviour-cloning corpus only:
+        ``AdvantageWeightedRegression.fit`` raises ``TrainingDataError`` when
+        no transition carries a reward. Idempotent, and never raises — losing
+        the training signal is bad, losing the run's results is worse.
+        """
+        if self._reward_builder is None or self._search is None:
+            return 0
+        try:
+            filled = self._reward_builder.mature_all(
+                self.trajectory, certified_archive=self._certified
+            )
+        except Exception as e:  # pragma: no cover - shutdown best effort
+            if self.logger:
+                self.logger.error(f"[Reward] maturation failed: {e}")
+            return 0
+        if self.logger and filled:
+            mean = sum(r for _, r in filled) / len(filled)
+            self.logger.info(
+                f"[Reward] matured {len(filled)} transitions (mean={mean:+.4f})"
+            )
+        return len(filled)
 
     # ------------------------------------------------------------------
 
@@ -879,6 +1070,95 @@ class ReliabilityAwareQuantStrategy(Strategy):
             target.validity = 1.0
         return outcome
 
+    def _retrieve_for_decision(self, state_version: int):
+        """Consult the experience index at the decision's committed version.
+
+        Returns a RetrievalBundle (recorded for later analysis) or None. No
+        family filter: at decision time the action has not been chosen, so
+        narrowing to one model family would be retrieving against a guess.
+
+        Never raises — a retrieval fault must not cost a search iteration.
+        """
+        if not self.retrieval_enabled or self._retriever is None:
+            return None
+        try:
+            return self._retriever.retrieve(
+                at_version=state_version,
+                query_type=QueryType.POLICY_DECISION,
+                top_k=self.retrieval_top_k,
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            if self.logger:
+                self.logger.warning(f"[Experience] retrieval failed: {e}")
+            return None
+
+    def _summarize_retrieval(self, bundle) -> Optional[RetrievedExperienceSummary]:
+        """Compress a bundle into the handful of features the policy sees.
+
+        Dereferences the records rather than reading the bundle alone: the
+        bundle holds ids and scores, but whether a pattern is *repairable* or
+        *policy-level* is the part the policy can act on, and it lives on the
+        record. Reading only the bundle left those two features pinned at
+        zero, which no test would have caught because zero is a legal value.
+
+        None (retrieval disabled or failed) and an empty result encode
+        differently — see ObservationEncoder's retrieval_ran flag.
+        """
+        if bundle is None:
+            return None
+        records = self._retriever.records_for(bundle) if self._retriever else []
+        n_repairable = sum(
+            1 for r in records if r.outcome_summary.get("repairable")
+        )
+        n_policy_level = sum(
+            1 for r in records if r.outcome_summary.get("policy_level")
+        )
+        dominant = None
+        if records:
+            dominant = records[0].applicability.get("failure_kind")
+        return RetrievedExperienceSummary(
+            n_retrieved=len(bundle.retrieved_experience_ids),
+            n_available=bundle.n_candidates_considered,
+            max_reliability=max(bundle.retrieval_scores, default=0.0),
+            n_repairable=n_repairable,
+            n_policy_level=n_policy_level,
+            dominant_failure=dominant,
+            token_cost=bundle.token_cost,
+        )
+
+    def _retrieve_for_proposal(
+        self, state_version: int, action: StructuredAction, *, decision_id: str
+    ):
+        """Fetch the experience an expert will be shown (stages 2 + 4).
+
+        Separate from the decision-phase query in two ways that matter: the
+        size comes from the policy's retrieval head rather than a constant,
+        and it filters on the family the action actually chose — which is
+        exactly the information the earlier query could not have had.
+
+        Returns (guidance, bundle); either may be None.
+        """
+        if not self.retrieval_enabled or self._retriever is None:
+            return None, None
+        top_k = int(getattr(action, "retrieval_top_k", 0) or 0)
+        if top_k <= 0:
+            return None, None       # the policy declined; that is a valid choice
+        try:
+            bundle = self._retriever.retrieve(
+                at_version=state_version,
+                query_type=QueryType.GENERATION,
+                filters={"model_family": action.model_family},
+                top_k=top_k,
+                decision_id=decision_id,
+            )
+            bundle.consumed_by_policy = True
+            records = self._retriever.records_for(bundle)
+            return build_guidance(records, bundle=bundle), bundle
+        except Exception as e:  # pragma: no cover - defensive
+            if self.logger:
+                self.logger.warning(f"[Experience] proposal retrieval failed: {e}")
+            return None, None
+
     def _encode_observation(self, obs: AgentObservation) -> Optional[List[float]]:
         """Feature vector recorded alongside the decision, for offline RL.
 
@@ -907,6 +1187,51 @@ class ReliabilityAwareQuantStrategy(Strategy):
             if expert.kind == action.expert:
                 return expert
         return next(iter(self.experts.values()))
+
+    def _resolve_action(self, action: StructuredAction) -> Tuple[StructuredAction, ProposalExpert]:
+        """Pick the expert that will serve this action and stamp what it is.
+
+        Not every ExpertKind has an implementation and not every declared
+        family has a registered expert, so ``_pick_expert`` substitutes. That
+        substitution used to be invisible: the DecisionRecord kept saying
+        'crossover' while a mutation ran, and the trainer then treated two
+        labels for one behaviour as two distinct actions.
+
+        Resolving here — before the DecisionRecord is built — is what makes
+        the trajectory describe what happened. Runs before the early-return
+        promotion/reeval paths too: those do not generate, but the recorded
+        action is still encoded for training, so it has to carry the same
+        honest labels as every other decision.
+        """
+        expert = self._pick_expert(action)
+        resolved = action.model_copy(
+            update={
+                "resolved_expert": expert.kind.value,
+                "resolved_family": expert.model_family,
+            }
+        )
+        if resolved.was_substituted:
+            self._warn_substitution(action, expert)
+        return resolved, expert
+
+    def _warn_substitution(self, action: StructuredAction, expert: ProposalExpert) -> None:
+        """Log each distinct substitution once.
+
+        Once, not per decision: a run of 200 decisions on a family with no
+        expert would otherwise bury everything else in the log, and the useful
+        information (which requests cannot be served) is a small fixed set.
+        """
+        key = (action.expert.value, action.model_family,
+               expert.kind.value, expert.model_family)
+        if key in self._substitutions_seen:
+            return
+        self._substitutions_seen.add(key)
+        if self.logger:
+            self.logger.warning(
+                f"[Action] {key[0]}/{key[1]} has no registered expert; "
+                f"served by {key[2]}/{key[3]}. Recorded as the latter — see "
+                "StructuredAction.resolved_expert."
+            )
 
     def _run_gate_for_outcome(
         self,

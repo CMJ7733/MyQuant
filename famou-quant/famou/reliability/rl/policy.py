@@ -34,6 +34,9 @@ from typing import Any, Dict, List, Optional
 from famou.reliability.observation import AgentObservation
 from famou.reliability.rl.encoding import (
     ENCODING_VERSION,
+    EXPERTS,
+    FAMILIES,
+    RETRIEVAL_BUCKETS,
     ActionCodec,
     ObservationEncoder,
 )
@@ -90,6 +93,26 @@ class LearnedMetaPolicy:
         #: read by the strategy when it builds the DecisionRecord
         self.last_log_prob: Optional[float] = None
         self.last_value: Optional[float] = None
+        #: Head values the expert registry can actually serve. None = no
+        #: restriction; the strategy fills these in via
+        #: set_reachable_action_space() at construction time.
+        self._reachable_experts: Optional[set] = None
+        self._reachable_families: Optional[set] = None
+
+    def set_reachable_action_space(
+        self, *, experts: Optional[List[str]] = None,
+        families: Optional[List[str]] = None,
+    ) -> None:
+        """Restrict the expert/family heads to what the registry can serve.
+
+        Without this the policy keeps sampling ``crossover`` or ``linear``,
+        the registry substitutes something else, and every such decision is an
+        iteration spent on an action whose label does not describe what ran.
+        Masking is cheaper than teaching the network that six expert values
+        collapse onto two.
+        """
+        self._reachable_experts = set(experts) if experts else None
+        self._reachable_families = set(families) if families else None
 
     # ------------------------------------------------------------------
 
@@ -118,10 +141,14 @@ class LearnedMetaPolicy:
         self.last_log_prob = total_log_prob
         self.last_value = float(value[0])
 
+        # Look the promote head up by name. It used to be the last head, and
+        # indices[-1] read it positionally — adding the retrieval head in v3
+        # would have silently made "promote" mean "retrieval bucket 1".
+        promote_index = indices[self.codec.HEADS.index("promote")]
         action = self.codec.decode(
             indices,
             parent_ids=self._parents(obs, promo_target),
-            promotion_target_id=promo_target if indices[-1] == 1 else None,
+            promotion_target_id=promo_target if promote_index == 1 else None,
             rationale=f"{self.policy_version} (logp={total_log_prob:.2f}, "
                       f"v={self.last_value:.3f})",
         )
@@ -142,7 +169,37 @@ class LearnedMetaPolicy:
             # burns an iteration producing no evidence.
             if logits.shape[0] > 0:
                 logits[0] = float("-inf")
+        elif head == "retrieval":
+            # Asking for experience that does not exist costs a decision and
+            # returns nothing. Masking is not a substitute for learning the
+            # cost — the reward still charges for what IS retrieved — it just
+            # removes the choices that are unavailable rather than unwise.
+            available = 0
+            if obs.retrieved_experience is not None:
+                available = int(obs.retrieved_experience.n_available)
+            for i, bucket in enumerate(RETRIEVAL_BUCKETS):
+                if bucket > available:
+                    logits[i] = float("-inf")
+        elif head == "expert" and self._reachable_experts is not None:
+            self._mask_unreachable(logits, EXPERTS, self._reachable_experts)
+        elif head == "family" and self._reachable_families is not None:
+            self._mask_unreachable(logits, FAMILIES, self._reachable_families)
         return logits
+
+    @staticmethod
+    def _mask_unreachable(logits, vocabulary, reachable: set) -> None:
+        """Mask vocabulary entries the registry cannot serve.
+
+        Refuses to mask everything: an empty head has no valid choice and
+        softmax over all -inf yields NaN, which would surface far from here as
+        an unexplained crash mid-search.
+        """
+        keep = [i for i, name in enumerate(vocabulary) if name in reachable]
+        if not keep:
+            return
+        for i, name in enumerate(vocabulary):
+            if name not in reachable:
+                logits[i] = float("-inf")
 
     def _promotable(self, obs: AgentObservation) -> Optional[str]:
         """The best candidate that could legitimately be gated right now.
@@ -186,13 +243,14 @@ class LearnedMetaPolicy:
         out: Dict[str, Any] = {"value": float(value[0]),
                                "features": self.encoder.describe(obs)}
         from famou.reliability.rl.encoding import (
-            BATCH_BUCKETS, EXPERTS, FAMILIES, FIDELITIES,
+            BATCH_BUCKETS, EXPERTS, FAMILIES, FIDELITIES, RETRIEVAL_BUCKETS,
         )
 
         vocab = {"expert": EXPERTS, "family": FAMILIES,
                  "fidelity": [str(f) for f in FIDELITIES],
                  "batch": [str(b) for b in BATCH_BUCKETS],
-                 "promote": ["no", "yes"]}
+                 "promote": ["no", "yes"],
+                 "retrieval": [str(r) for r in RETRIEVAL_BUCKETS]}
         for i, head in enumerate(self.codec.HEADS):
             probs = torch.softmax(logits_list[i][0] / self.temperature, dim=-1)
             out[head] = {

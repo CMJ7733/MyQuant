@@ -1,0 +1,172 @@
+# =============================================================================
+# LLM-driven factor evolution on the frozen qlib snapshot
+# =============================================================================
+#
+# Run:
+#   /opt/conda/envs/quant/bin/python -m famou \
+#     -c examples/evoquant_qlib/factor_evolution/config.yaml \
+#     -p examples/evoquant_qlib/factor_evolution/seed_factor.py \
+#     -e examples/evoquant_qlib/factor_evolution/evaluator.py
+#
+# ⚠️  BEFORE THE FIRST RUN: fill in infrastructure.llm.api_base / model / api_key
+#     at the bottom of this file. There is nowhere else to put them --
+#     config/key_set.yaml is not read by any code, and settings.py does NOT
+#     expand environment variables, so "${OPENAI_API_KEY}" would be sent
+#     literally as the key.
+#
+# EPISODE: defaults to E1, the DEVELOPMENT episode (train 2008-2013 / dev 2014).
+#     Its final_test was already burned under splits v1, so it is the sandbox --
+#     look at it as often as you like while the method is still moving. The
+#     evaluation episodes' only value is that nobody has looked yet; run one of
+#     those only once the seed, prompt and fitness are frozen:
+#
+#         FAMOU_EPISODE=E11 python -m famou -c ... -p ... -e ...
+#
+#     Dates come from protocol_b/splits_v2.yaml, never from this file.
+
+experiment:
+  name: factor_evolution
+  language: python
+  # Valid names come from the FILENAMES in famou/strategies/ (_registry.py:257):
+  # greedy, top_cluster, adaptive_cluster, creative_exploration, ...
+  # "standard" is NOT one of them despite appearing in older example configs.
+  strategy: top_cluster
+
+  # Start small to confirm the chain works end-to-end, then raise.
+  max_iterations: 3
+  max_workers: 1
+  checkpoint_interval: 1
+  seed: 42
+
+  island:
+    num_islands: 1
+    island_size: 20
+    migration_interval: 50
+    migration_size: 1
+    migration_topology: ring
+
+  # Candidates that fail the look-ahead probe come back with a precise reason;
+  # the debug loop lets the LLM act on it instead of the program being discarded.
+  debug:
+    enabled: true
+    max_iterations: 2
+
+  task_description: |
+    # 从原始行情数据演化选股因子
+
+    ## 目标
+    实现 `compute_factor(panel)`，返回一个截面因子矩阵。因子值越大，
+    预期未来收益越高。目标是最大化 **日度 RankIC 均值**。
+
+    ## 数据接口
+
+    `panel` 提供以下对齐的 `(n_days, n_instruments)` float64 矩阵：
+
+    ```
+    panel.open    panel.high    panel.low    panel.close
+    panel.volume  panel.vwap    panel.amount
+    ```
+
+    以及 `panel.dates`（list[str]，升序）和 `panel.instruments`（list[str]）。
+
+    - 第 0 轴是交易日（升序），第 1 轴是股票。
+    - `NaN` 表示该股当日不在股票池内或未交易 —— 这是正常的，
+      成分股会随时间变化（约 44% 的格子是 NaN）。
+    - 价格是后复权价，可直接跨期相除算收益率。
+
+    ## 函数签名
+
+    ```python
+    import numpy as np
+
+    def compute_factor(panel):
+        """
+        Args:
+            panel: 上述行情面板
+        Returns:
+            np.ndarray, 形状 (n_days, n_instruments)。
+            允许 NaN —— 当日截面中的 NaN 会被自动剔除。
+        """
+        ...
+    ```
+
+    ## 唯一的硬约束：不得使用未来数据
+
+    **输出的第 t 行只能依赖输入的第 0..t 行。**
+
+    使用第 t+1 行或更晚的数据就是前视（look-ahead）。评估器会用**因果性检验**
+    自动检测：把面板截断到第 T 天重新调用你的函数，第 T 行必须与完整运行时
+    **逐位相同**（包括 NaN 的位置）。用了未来数据不可能通过这个检验，
+    该候选直接判 `validity=0`、得分 0。这不是靠人工审代码，无法规避。
+
+    常见的**意外**前视，务必避开：
+
+    - `np.nanmean(x, axis=0)` / `x.std(axis=0)` / `np.nanpercentile(x, axis=0)`
+      —— 沿时间轴的全样本统计量包含了 t 之后的数据。
+      需要标准化就用**截面**（`axis=1`）或**滚动窗口**。
+    - 切片错位，例如 `close[21:] / close[1:-20]` 把第 t 行对齐到了 close[t+1]。
+    - 用未来信息决定哪些格子置为 NaN。
+
+    截面操作（沿 axis=1，即同一天内跨股票）永远是安全的，
+    因为它只用到当天的数据。
+
+    ## 评分
+
+    在 visible_dev 段（约 240 个交易日）上计算：
+
+    - **`rank_ic`（= combined_score，驱动演化）**：每日因子与未来收益的
+      Spearman 相关系数，取全期均值。
+    - `ic`：Pearson 版本。
+    - `icir`：`rank_ic / std(日度 RankIC)`，衡量稳定性。
+    - `sharpe`：按因子排序做多空十分位组合的年化夏普。
+    - `subperiod_rank_ic`：把评分区间切成 4 段各自的 RankIC —— 如果 4 段
+      符号不一致，说明因子只在某个区间有效，不稳健。
+
+    评分区间之前还有 6 年数据也在面板里，但**不参与评分**，
+    它的作用是让滚动窗口在评分区间第一天就已经预热。
+
+    ## 一些方向
+
+    起点是 20 日反转。可以考虑的思路：多周期动量/反转的组合、
+    量价关系（成交量确认、量价背离）、波动率调整、日内形态
+    （开盘/收盘/最高/最低的相对位置）、用 vwap 衡量成交成本、
+    条件门控（在不同波动率或趋势状态下切换信号方向）、
+    非线性变换（tanh 压缩极值、截面排序）。
+
+    注意因子的**截面区分度**：如果同一天内所有股票的因子值几乎相同，
+    就无法排序，IC 无意义。
+
+# =============================================================================
+infrastructure:
+  # ---------------------------------------------------------------------------
+  # ⚠️ 填这里 ⚠️  必须是字面量字符串，不支持 ${ENV_VAR} 展开。
+  # ---------------------------------------------------------------------------
+  llm:
+    provider: openai            # 兼容 OpenAI 协议的端点都用 openai
+    api_base: FILL_ME_IN        # 例如 https://qianfan.baidubce.com/v2
+    model: FILL_ME_IN           # 例如 deepseek-v3
+    api_key: FILL_ME_IN         # 例如 sk-...
+    temperature: 0.7
+    max_tokens: 16000
+    timeout: 3600
+
+  storage:
+    type: local
+    base_path: ./famou_data
+
+  logger:
+    type: local
+    level: INFO
+    file_enabled: true
+
+  env:
+    type: local
+    # 首次运行要从 qlib 构建面板（~10s），之后走磁盘缓存（~0.1s）。
+    # 候选本身通常几秒。circle_packing 用的 30s 在这里不够。
+    timeout: 900
+
+  monitor:
+    enabled: false
+
+  langfuse:
+    enabled: false

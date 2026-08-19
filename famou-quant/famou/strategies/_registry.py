@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
 from famou.config.settings import ModulesConfig, EvaluatorConfig
-from famou.core.data import RolloutResult
+from famou.core.data import RolloutResult, WorkBatch
 from famou.core.protocol import Rollout, Context
 from famou.modules import PopulationModule
 
@@ -123,13 +123,63 @@ class StaticStrategy:
         """
         return self.rollout
 
+    def forward_batch(
+        self,
+        ctx: Context,
+        rollout_history: List[RolloutResult],
+        max_batch_size: int = 1,
+    ) -> WorkBatch:
+        """Wrap :meth:`forward` as a batch of one.
+
+        ``Evolver._plan_rollout_tasks`` dispatches exclusively through
+        ``forward_batch``. The Strategy protocol documents this default ("the
+        default implementation wraps ``forward()`` as a batch of one, so every
+        existing Strategy keeps working unchanged"), but ``Strategy`` is a
+        ``typing.Protocol`` whose bodies are ``...`` and ``StaticStrategy``
+        inherits from nothing, so the promised default did not exist anywhere
+        and every registered strategy raised ``AttributeError`` on the first
+        iteration.
+
+        A static strategy returns the same rollout regardless of context, so
+        there is nothing meaningful to fan out: honouring ``max_batch_size`` by
+        emitting N copies would run the identical decision N times. One rollout
+        per decision is both correct and what these strategies already assumed.
+        """
+        return WorkBatch.single(
+            self.forward(ctx, rollout_history), strategy=self.name
+        )
+
     def dump_state(self) -> Dict[str, Any]:
         """Dump strategy-level state for checkpoint persistence."""
         return {}
 
+
     def load_state(self, state: Dict[str, Any]) -> None:
         """Restore strategy-level state from checkpoint."""
         pass
+
+    # -- rollout lifecycle ---------------------------------------------------
+    #
+    # The Evolver calls these on every dispatched rollout. They exist to let a
+    # stateful strategy commit or roll back whatever ``forward()`` reserved. A
+    # static strategy reserves nothing -- it returns the same rollout every
+    # time -- so the protocol's documented no-op is the correct behaviour, and
+    # the only reason to spell it out here is that ``Strategy`` is a
+    # ``typing.Protocol`` (bodies are ``...``) that ``StaticStrategy`` does not
+    # inherit from, so nothing supplied these defaults and the Evolver raised
+    # ``AttributeError`` the first time a rollout finished.
+
+    def on_rollout_failed(self, result: RolloutResult) -> None:
+        """No-op: a static strategy holds no per-rollout state to roll back."""
+        del result
+
+    def on_rollout_complete(self, result: RolloutResult) -> None:
+        """No-op: a static strategy holds no per-rollout state to commit."""
+        del result
+
+    def finalize_experiment(self, contexts: Dict[int, Context]) -> None:
+        """No-op: a static strategy has no runtime state to flush."""
+        del contexts
 
     def __str__(self) -> str:
         """String representation."""
